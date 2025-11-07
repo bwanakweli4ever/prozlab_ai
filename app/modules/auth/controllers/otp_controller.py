@@ -1,0 +1,133 @@
+# app/modules/auth/controllers/otp_controller.py - Fixed dependencies
+from typing import Any
+from fastapi import APIRouter, Depends, HTTPException, status, Body
+from sqlalchemy.orm import Session
+
+from app.database.session import get_db
+from app.modules.auth.models.user import User
+from app.modules.auth.services.auth_service import auth_service, get_current_user, get_current_superuser
+from app.modules.auth.schemas.otp import OTPRequest, OTPVerification, OTPResponse
+from app.modules.auth.services.otp_service import OTPService
+
+router = APIRouter()
+otp_service = OTPService()
+
+
+@router.get("/status")
+def get_sms_service_status() -> Any:
+    """Get SMS service status"""
+    try:
+        status = otp_service.get_service_status()
+        return status
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get SMS service status"
+        )
+
+
+@router.post("/send-otp", response_model=OTPResponse)
+def send_otp(
+    *,
+    db: Session = Depends(get_db),
+    otp_request: OTPRequest
+) -> Any:
+    """Send OTP to phone number"""
+    try:
+        result = otp_service.send_otp(
+            db=db,
+            phone_number=otp_request.phone_number,
+            purpose=otp_request.purpose
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send OTP"
+        )
+
+
+@router.post("/verify-otp", response_model=OTPResponse)
+def verify_otp(
+    *,
+    db: Session = Depends(get_db),
+    otp_verification: OTPVerification
+) -> Any:
+    """Verify OTP code"""
+    try:
+        result = otp_service.verify_otp(
+            db=db,
+            phone_number=otp_verification.phone_number,
+            otp_code=otp_verification.otp_code,
+            purpose=otp_verification.purpose
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify OTP"
+        )
+
+
+@router.post("/verify-and-update-profile")
+def verify_otp_and_update_profile(
+    *,
+    db: Session = Depends(get_db),
+    otp_verification: OTPVerification,
+    current_user: User = Depends(get_current_user)  # Fixed dependency
+) -> Any:
+    """Verify OTP and update user profile with phone number"""
+    try:
+        result = otp_service.verify_and_update_profile(
+            db=db,
+            user_id=str(current_user.id),
+            phone_number=otp_verification.phone_number,
+            otp_code=otp_verification.otp_code
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify OTP and update profile"
+        )
+
+
+@router.post("/resend-otp", response_model=OTPResponse)
+def resend_otp(
+    *,
+    db: Session = Depends(get_db),
+    otp_request: OTPRequest
+) -> Any:
+    """Resend OTP to phone number"""
+    try:
+        result = otp_service.resend_otp(
+            db=db,
+            phone_number=otp_request.phone_number,
+            purpose=otp_request.purpose
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to resend OTP"
+        )
