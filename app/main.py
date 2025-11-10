@@ -20,6 +20,8 @@ default_origins = [
     "http://localhost:3001",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
+    "https://prozlab.com",
+    "https://www.prozlab.com",
 ]
 cors_origins = getattr(settings, "CORS_ORIGINS", None) or default_origins
 
