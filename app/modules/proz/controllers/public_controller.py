@@ -1,5 +1,6 @@
 # app/modules/proz/controllers/public_controller.py
 from typing import Any, List, Optional
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
@@ -22,6 +23,7 @@ from app.modules.proz.schemas.public import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/profiles", response_model=ProfileSearchResponse)
@@ -45,99 +47,6 @@ async def search_public_profiles(
     """
     Search and filter public Proz profiles with verification status.
     """
-    # Build base query
-    query_obj = db.query(ProzProfile)
-    
-    # Handle verification status filtering
-    if verification_status and verification_status.lower() != "all":
-        if verification_status.lower() == "verified":
-            query_obj = query_obj.filter(ProzProfile.verification_status == "verified")
-        elif verification_status.lower() == "pending":
-            query_obj = query_obj.filter(ProzProfile.verification_status == "pending")
-        elif verification_status.lower() == "rejected":
-            query_obj = query_obj.filter(ProzProfile.verification_status == "rejected")
-    elif not show_unverified:
-        # Default: only show verified profiles unless explicitly requested
-        query_obj = query_obj.filter(ProzProfile.verification_status == "verified")
-    
-    # Apply search filters
-    if query:
-        search_filter = or_(
-            ProzProfile.first_name.ilike(f"%{query}%"),
-            ProzProfile.last_name.ilike(f"%{query}%"),
-            ProzProfile.bio.ilike(f"%{query}%"),
-            ProzProfile.location.ilike(f"%{query}%")
-        )
-        query_obj = query_obj.filter(search_filter)
-    
-    if location:
-        query_obj = query_obj.filter(ProzProfile.location.ilike(f"%{location}%"))
-    
-    if specialty:
-        query_obj = query_obj.join(ProzSpecialty).join(Specialty).filter(
-            Specialty.name.ilike(f"%{specialty}%")
-        )
-    
-    if min_rating is not None:
-        query_obj = query_obj.filter(ProzProfile.rating >= min_rating)
-    
-    if max_hourly_rate is not None:
-        query_obj = query_obj.filter(ProzProfile.hourly_rate <= max_hourly_rate)
-    
-    if min_experience is not None:
-        query_obj = query_obj.filter(ProzProfile.years_experience >= min_experience)
-    
-    if availability:
-        query_obj = query_obj.filter(ProzProfile.availability == availability)
-    
-    if is_featured is not None:
-        query_obj = query_obj.filter(ProzProfile.is_featured == is_featured)
-    
-    # Apply sorting
-    if sort_by == "verification_status":
-        # Custom sorting for verification status (verified first, then pending, then rejected)
-        query_obj = query_obj.order_by(
-            func.case(
-                (ProzProfile.verification_status == "verified", 1),
-                (ProzProfile.verification_status == "pending", 2),
-                (ProzProfile.verification_status == "rejected", 3),
-                else_=4
-            ).asc() if sort_order.lower() == "asc" else func.case(
-                (ProzProfile.verification_status == "verified", 1),
-                (ProzProfile.verification_status == "pending", 2),
-                (ProzProfile.verification_status == "rejected", 3),
-                else_=4
-            ).desc()
-        )
-    else:
-        sort_column = getattr(ProzProfile, sort_by, ProzProfile.rating)
-        if sort_order.lower() == "desc":
-            query_obj = query_obj.order_by(sort_column.desc())
-        else:
-            query_obj = query_obj.order_by(sort_column.asc())
-    
-    # Get total count
-    total_count = query_obj.count()
-    
-    # Apply pagination
-    offset = (page - 1) * page_size
-    profiles = query_obj.offset(offset).limit(page_size).all()
-    
-    # Get specialties for each profile
-    profile_cards = []
-    for profile in profiles:
-        specialties = db.query(Specialty.name).join(ProzSpecialty).filter(
-            ProzSpecialty.proz_id == profile.id
-        ).all()
-        
-        profile_data = PublicProzProfileCard.model_validate(profile)
-        profile_data.specialties = [s.name for s in specialties]
-        profile_cards.append(profile_data)
-    
-    # Calculate pagination info
-    total_pages = math.ceil(total_count / page_size)
-    
-    # Build filters object
     filters_applied = ProfileSearchRequest(
         query=query,
         location=location,
@@ -150,15 +59,107 @@ async def search_public_profiles(
         verification_status=verification_status,
         show_unverified=show_unverified
     )
-    
-    return ProfileSearchResponse(
-        profiles=profile_cards,
-        total_count=total_count,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
-        filters_applied=filters_applied
-    )
+
+    try:
+        query_obj = db.query(ProzProfile)
+
+        if verification_status and verification_status.lower() != "all":
+            if verification_status.lower() == "verified":
+                query_obj = query_obj.filter(ProzProfile.verification_status == "verified")
+            elif verification_status.lower() == "pending":
+                query_obj = query_obj.filter(ProzProfile.verification_status == "pending")
+            elif verification_status.lower() == "rejected":
+                query_obj = query_obj.filter(ProzProfile.verification_status == "rejected")
+        elif not show_unverified:
+            query_obj = query_obj.filter(ProzProfile.verification_status == "verified")
+
+        if query:
+            search_filter = or_(
+                ProzProfile.first_name.ilike(f"%{query}%"),
+                ProzProfile.last_name.ilike(f"%{query}%"),
+                ProzProfile.bio.ilike(f"%{query}%"),
+                ProzProfile.location.ilike(f"%{query}%")
+            )
+            query_obj = query_obj.filter(search_filter)
+
+        if location:
+            query_obj = query_obj.filter(ProzProfile.location.ilike(f"%{location}%"))
+
+        if specialty:
+            query_obj = query_obj.join(ProzSpecialty).join(Specialty).filter(
+                Specialty.name.ilike(f"%{specialty}%")
+            )
+
+        if min_rating is not None:
+            query_obj = query_obj.filter(ProzProfile.rating >= min_rating)
+
+        if max_hourly_rate is not None:
+            query_obj = query_obj.filter(ProzProfile.hourly_rate <= max_hourly_rate)
+
+        if min_experience is not None:
+            query_obj = query_obj.filter(ProzProfile.years_experience >= min_experience)
+
+        if availability:
+            query_obj = query_obj.filter(ProzProfile.availability == availability)
+
+        if is_featured is not None:
+            query_obj = query_obj.filter(ProzProfile.is_featured == is_featured)
+
+        if sort_by == "verification_status":
+            query_obj = query_obj.order_by(
+                func.case(
+                    (ProzProfile.verification_status == "verified", 1),
+                    (ProzProfile.verification_status == "pending", 2),
+                    (ProzProfile.verification_status == "rejected", 3),
+                    else_=4
+                ).asc() if sort_order.lower() == "asc" else func.case(
+                    (ProzProfile.verification_status == "verified", 1),
+                    (ProzProfile.verification_status == "pending", 2),
+                    (ProzProfile.verification_status == "rejected", 3),
+                    else_=4
+                ).desc()
+            )
+        else:
+            sort_column = getattr(ProzProfile, sort_by, ProzProfile.rating)
+            if sort_order.lower() == "desc":
+                query_obj = query_obj.order_by(sort_column.desc())
+            else:
+                query_obj = query_obj.order_by(sort_column.asc())
+
+        total_count = query_obj.count()
+        offset = (page - 1) * page_size
+        profiles = query_obj.offset(offset).limit(page_size).all()
+
+        profile_cards = []
+        for profile in profiles:
+            specialties = db.query(Specialty.name).join(ProzSpecialty).filter(
+                ProzSpecialty.proz_id == profile.id
+            ).all()
+
+            profile_data = PublicProzProfileCard.model_validate(profile)
+            profile_data.specialties = [s.name for s in specialties]
+            profile_cards.append(profile_data)
+
+        total_pages = math.ceil(total_count / page_size) if page_size else 0
+
+        return ProfileSearchResponse(
+            profiles=profile_cards,
+            total_count=total_count,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+            filters_applied=filters_applied
+        )
+    except Exception:
+        logger.exception("Failed to fetch public profile search results; returning empty fallback response.")
+        return ProfileSearchResponse(
+            profiles=[],
+            total_count=0,
+            page=page,
+            page_size=page_size,
+            total_pages=0,
+            filters_applied=filters_applied,
+        )
 
 
 @router.get("/profiles/{profile_id}", response_model=PublicProzProfileWithReviews)
