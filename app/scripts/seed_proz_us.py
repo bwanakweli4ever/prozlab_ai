@@ -53,7 +53,7 @@ def generate_profiles(count: int = 100, states: List[str] = None) -> List[dict]:
             f"{first_name} {last_name} is a seasoned professional based in {state} with "
             f"{years_experience} years of experience delivering reliable, high-quality solutions."
         )
-        education = f"{faker.company()} University — {faker.job()} ({random.choice(["2012–2016","2015–2019","2018–2022"])})"
+        education = f"{faker.company()} University — {faker.job()} ({random.choice(['2012–2016', '2015–2019', '2018–2022'])})"
         certifications = random.choice([
             "AWS CCP", "Azure Fundamentals", "PMP", "Scrum Master", "CompTIA Security+"
         ])
