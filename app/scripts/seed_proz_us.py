@@ -78,7 +78,7 @@ def generate_profiles(count: int = 100, states: List[str] = None) -> List[dict]:
     return data
 
 
-def insert_profiles(profiles: List[dict], create_users: bool = True, default_password: str = "SeedUser@123") -> int:
+def insert_profiles(profiles: List[dict], create_users: bool = True, default_password: str = "SeedUser@123", verified: bool = False) -> int:
     db = SessionLocal()
     inserted = 0
     try:
@@ -99,7 +99,7 @@ def insert_profiles(profiles: List[dict], create_users: bool = True, default_pas
                         hashed_password=get_password_hash(default_password),
                         is_active=True,
                         is_superuser=False,
-                        is_verified=False,
+                        is_verified=verified,  # Set user verification status if verified flag is set
                     )
                     db.add(user)
                     db.flush()  # get id
@@ -120,6 +120,8 @@ def insert_profiles(profiles: List[dict], create_users: bool = True, default_pas
                 website=p["website"],
                 linkedin=p["linkedin"],
                 preferred_contact_method=p["preferred_contact_method"],
+                verification_status="verified" if verified else "pending",  # Set verification status
+                email_verified=verified,  # Set email verification status
             )
             db.add(profile)
             inserted += 1
@@ -137,6 +139,7 @@ def main():
     parser.add_argument("--out", type=str, default="exports/proz_us_seed.json", help="Output JSON path")
     parser.add_argument("--create-users", action="store_true", help="Also create linked User accounts for each profile")
     parser.add_argument("--password", type=str, default="SeedUser@123", help="Default password for created users")
+    parser.add_argument("--verified", action="store_true", help="Create profiles with verified status (verification_status='verified' and email_verified=True)")
     parser.add_argument("--dry", action="store_true", help="Only generate JSON, do not insert into DB")
     args = parser.parse_args()
 
@@ -166,8 +169,9 @@ def main():
     print(f"Exported {len(profiles)} profiles -> {out_path}")
 
     if not args.dry:
-        inserted = insert_profiles(profiles, create_users=args.create_users, default_password=args.password)
-        print(f"Inserted {inserted} new profiles into DB (skipped existing emails)")
+        inserted = insert_profiles(profiles, create_users=args.create_users, default_password=args.password, verified=args.verified)
+        verification_status = "verified" if args.verified else "pending"
+        print(f"Inserted {inserted} new profiles into DB with status '{verification_status}' (skipped existing emails)")
         # Show after count
         s = SessionLocal()
         try:
