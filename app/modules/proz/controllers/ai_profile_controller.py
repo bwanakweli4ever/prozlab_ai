@@ -128,7 +128,7 @@ async def review_profile(
 ):
     profile = db.query(ProzProfile).filter(ProzProfile.email == current_user.email).first()
     if not profile:
-        raise HTTPException(status_code=404, detail="Professional profile not found")
+        raise HTTPException(status_code=404, detail="Professional profile not found. Please create a profile first.")
     ai = AIProfileService()
     payload = {
         "first_name": profile.first_name,
