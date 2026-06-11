@@ -5,7 +5,7 @@ from typing import List, Optional
 import secrets
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "ProzLab Backend API"
+    PROJECT_NAME: str = "Prozlab Hiring API"
     API_V1_PREFIX: str = "/api/v1"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days

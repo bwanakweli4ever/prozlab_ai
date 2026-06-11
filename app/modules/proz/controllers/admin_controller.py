@@ -71,6 +71,16 @@ async def get_admin_dashboard(
     ).order_by(ProzProfile.created_at.asc()).first()
     
     pending_oldest_date = oldest_pending.created_at if oldest_pending else None
+
+    pending_skill_reviews = db.query(ProzProfile).filter(
+        ProzProfile.skill_verification_status == "pending_review"
+    ).count()
+    verified_skills = db.query(ProzProfile).filter(
+        ProzProfile.skill_verification_status == "verified"
+    ).count()
+    rejected_skills = db.query(ProzProfile).filter(
+        ProzProfile.skill_verification_status.in_(["rejected", "needs_revision"])
+    ).count()
     
     stats = VerificationStatsAdmin(
         total_profiles=total_profiles,
@@ -80,7 +90,10 @@ async def get_admin_dashboard(
         profiles_this_week=profiles_this_week,
         verifications_this_week=verifications_this_week,
         avg_verification_time_hours=avg_verification_time_hours,
-        pending_oldest_date=pending_oldest_date
+        pending_oldest_date=pending_oldest_date,
+        pending_skill_reviews=pending_skill_reviews,
+        verified_skills=verified_skills,
+        rejected_skills=rejected_skills,
     )
     
     # Recent submissions (last 10 profiles)

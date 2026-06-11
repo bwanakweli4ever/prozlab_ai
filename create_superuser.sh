@@ -46,100 +46,77 @@ fi
 log "Activating virtual environment..."
 source venv/bin/activate
 
-# 4. Load environment variables
-log "Loading environment variables..."
-if [ -f ".env" ]; then
-    while IFS= read -r line; do
-        if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
-            clean_line=$(echo "$line" | sed 's/[[:space:]]*#.*$//')
-            if [[ -n "$clean_line" ]]; then
-                export "$clean_line"
-            fi
-        fi
-    done < .env
-else
+# 4. Check .env exists (loaded by Python via pydantic-settings)
+if [ ! -f ".env" ]; then
     error ".env file not found"
 fi
 
-# 5. Check required environment variables
-log "Checking required environment variables..."
-required_vars=("DB_HOST" "DB_PORT" "DB_NAME" "DB_USER" "DB_PASSWORD")
-missing_vars=()
-
-for var in "${required_vars[@]}"; do
-    if [ -z "${!var}" ]; then
-        missing_vars+=("$var")
-    fi
-done
-
-if [ ${#missing_vars[@]} -gt 0 ]; then
-    error "Missing required environment variables: ${missing_vars[*]}"
-fi
-
-# 6. Test database connection
+# 5–7. Test DB connection and create superuser (Python reads .env correctly, including # in passwords)
 log "Testing database connection..."
-if PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &> /dev/null; then
-    success "Database connection successful!"
-else
-    error "Database connection failed. Please check your credentials."
-fi
-
-# 7. Create superuser using Python
-log "Creating superuser..."
 python -c "
 import sys
 sys.path.append('.')
+
+from sqlalchemy import text
+from app.config.settings import settings
+from app.config.database import engine
 from app.database.session import get_db
 from app.modules.auth.models.user import User
 from app.core.security import get_password_hash
-from sqlalchemy.orm import Session
 
-# Superuser details
+required = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']
+missing = [k for k in required if not getattr(settings, k, None)]
+if missing:
+    print(f'❌ Missing required environment variables: {\", \".join(missing)}')
+    sys.exit(1)
+
+try:
+    with engine.connect() as conn:
+        conn.execute(text('SELECT 1'))
+    print('✅ Database connection successful!')
+except Exception as e:
+    print(f'❌ Database connection failed: {e}')
+    print('   Check DB_* values in .env and that PostgreSQL is running (pg_isready -h localhost).')
+    sys.exit(1)
+
 email = 'mucyoelie84@gmail.com'
 password = 'kigali123'
 first_name = 'Admin'
 last_name = 'User'
-is_superuser = True
-is_active = True
 
+db = next(get_db())
 try:
-    # Get database session
-    db = next(get_db())
-    
-    # Check if user already exists
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
-        print(f'❌ User with email {email} already exists')
-        sys.exit(1)
-    
-    # Create new superuser
-    hashed_password = get_password_hash(password)
+        existing_user.is_superuser = True
+        existing_user.is_active = True
+        existing_user.hashed_password = get_password_hash(password)
+        db.commit()
+        print(f'✅ Superuser ready (password reset): {email}')
+        print(f'   User ID: {existing_user.id}')
+        sys.exit(0)
+
     new_user = User(
         email=email,
-        hashed_password=hashed_password,
+        hashed_password=get_password_hash(password),
         first_name=first_name,
         last_name=last_name,
-        is_superuser=is_superuser,
-        is_active=is_active
+        is_superuser=True,
+        is_active=True,
     )
-    
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
-    print(f'✅ Superuser created successfully!')
+    print('✅ Superuser created successfully!')
     print(f'   Email: {email}')
     print(f'   Name: {first_name} {last_name}')
     print(f'   User ID: {new_user.id}')
-    print(f'   Is Superuser: {is_superuser}')
-    print(f'   Is Active: {is_active}')
-    
 except Exception as e:
     print(f'❌ Error creating superuser: {e}')
     sys.exit(1)
 finally:
     db.close()
-"
+" || error "Superuser setup failed — see error above."
 
 success "Superuser creation completed!"
 

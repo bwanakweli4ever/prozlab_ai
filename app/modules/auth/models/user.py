@@ -1,6 +1,6 @@
 # app/modules/auth/models/user.py
-from sqlalchemy import Boolean, Column, String, DateTime
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Column, String, DateTime, Integer, Text
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
@@ -22,6 +22,15 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
     is_verified = Column(Boolean, default=False)
+    is_flagged = Column(Boolean, default=False)
+    is_banned = Column(Boolean, default=False)
+    fraud_score = Column(Integer, default=0)
+    fraud_signals = Column(JSONB, nullable=True)
+    ban_reason = Column(Text, nullable=True)
+    fraud_notes = Column(Text, nullable=True)
+    flagged_at = Column(DateTime(timezone=True), nullable=True)
+    banned_at = Column(DateTime(timezone=True), nullable=True)
+    fraud_scanned_at = Column(DateTime(timezone=True), nullable=True)
     
     # Timestamps (override base class if needed)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -8,6 +8,9 @@ class UserBase(BaseModel):
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
+    is_flagged: Optional[bool] = False
+    is_banned: Optional[bool] = False
+    fraud_score: Optional[int] = 0
     first_name: Optional[str] = None
     last_name: Optional[str] = None
 

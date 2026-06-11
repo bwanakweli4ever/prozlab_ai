@@ -2,9 +2,9 @@
 import uuid
 import enum
 
-from sqlalchemy import Column, String, Text, Integer, Numeric, ForeignKey, Enum, Boolean, Float, DateTime, func
+from sqlalchemy import Column, String, Text, Integer, ForeignKey, Boolean, Float, DateTime, func
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.database.base_class import Base
 
@@ -37,11 +37,19 @@ class ProzProfile(Base):
     location = Column(String(255), nullable=True)
     years_experience = Column(Integer, nullable=True)
     hourly_rate = Column(Float, nullable=True)
-    availability = Column(String(50), nullable=True)  # full-time, part-time, contract
+    availability = Column(String(50), nullable=True)  # full-time, part-time, contract, freelance
+    experience_level = Column(String(50), nullable=True)  # e.g. "3-5 years"
+    work_types = Column(JSONB, nullable=True)  # ["full-time", "contract", ...]
+    skills = Column(JSONB, nullable=True)  # expertise / skill tags
+    portfolio_links = Column(JSONB, nullable=True)  # portfolio URLs
     
     # Education & Skills
     education = Column(Text, nullable=True)
     certifications = Column(Text, nullable=True)
+    skill_verification_status = Column(String(30), default="not_started")  # not_started, in_progress, verified
+    verification_evidences = Column(JSONB, nullable=True)  # submitted proof items (github, work samples, etc.)
+    onboarding_completed = Column(Boolean, default=False)
+    predicted_success_score = Column(Float, nullable=True)
     
     # Social & Contact
     website = Column(String(255), nullable=True)

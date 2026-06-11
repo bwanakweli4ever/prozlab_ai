@@ -257,9 +257,10 @@ async def get_profile_categories(
     """
     Get available categories and filters for the frontend.
     """
-    # Get all specialties
-    specialties = db.query(Specialty.name).distinct().all()
-    specialty_names = [s.name for s in specialties]
+    specialty_names = [
+        row.name
+        for row in db.query(Specialty.name).order_by(Specialty.name.asc()).all()
+    ]
     
     # Get all locations from verified profiles
     locations = db.query(ProzProfile.location).filter(

@@ -22,11 +22,19 @@ class ProzProfileBase(BaseModel):
     years_experience: Optional[int] = None
     hourly_rate: Optional[float] = None
     availability: Optional[str] = None
+    experience_level: Optional[str] = None
+    work_types: Optional[List[str]] = None
+    skills: Optional[List[str]] = None
+    portfolio_links: Optional[List[str]] = None
     education: Optional[str] = None
     certifications: Optional[str] = None
     website: Optional[str] = None
     linkedin: Optional[str] = None
     preferred_contact_method: Optional[str] = None
+    skill_verification_status: Optional[str] = "not_started"
+    verification_evidences: Optional[List[dict]] = None
+    onboarding_completed: Optional[bool] = False
+    predicted_success_score: Optional[float] = None
 
 
 class ProzProfileCreate(ProzProfileBase):
@@ -48,6 +56,13 @@ class ProzProfileUpdate(BaseModel):
     linkedin: Optional[str] = None
     preferred_contact_method: Optional[str] = None
     profile_image_url: Optional[str] = None
+    experience_level: Optional[str] = None
+    work_types: Optional[List[str]] = None
+    skills: Optional[List[str]] = None
+    portfolio_links: Optional[List[str]] = None
+    skill_verification_status: Optional[str] = None
+    onboarding_completed: Optional[bool] = None
+    predicted_success_score: Optional[float] = None
     
     # Validation for numeric fields
     @field_validator('years_experience')

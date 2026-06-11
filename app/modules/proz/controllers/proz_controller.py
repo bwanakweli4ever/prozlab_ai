@@ -16,21 +16,27 @@ router = APIRouter()
 @router.post("/register", response_model=ProzProfileResponse, status_code=status.HTTP_201_CREATED)
 async def register_profile(
     profile_data: ProzProfileCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Register a professional profile.
+    Register a candidate profile linked to the authenticated user.
     """
-    # Check if profile already exists
-    existing_profile = db.query(ProzProfile).filter(ProzProfile.email == profile_data.email).first()
+    existing_profile = (
+        db.query(ProzProfile)
+        .filter(
+            (ProzProfile.user_id == current_user.id) | (ProzProfile.email == profile_data.email)
+        )
+        .first()
+    )
     if existing_profile:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A profile with this email already exists"
+            detail="A profile already exists for this user or email",
         )
-    
-    # Create new profile
+
     profile = ProzProfile(
+        user_id=current_user.id,
         first_name=profile_data.first_name,
         last_name=profile_data.last_name,
         email=profile_data.email,
@@ -39,13 +45,25 @@ async def register_profile(
         location=profile_data.location,
         years_experience=profile_data.years_experience,
         hourly_rate=profile_data.hourly_rate,
-        availability=profile_data.availability
+        availability=profile_data.availability,
+        experience_level=profile_data.experience_level,
+        work_types=profile_data.work_types,
+        skills=profile_data.skills,
+        portfolio_links=profile_data.portfolio_links,
+        skill_verification_status=profile_data.skill_verification_status or "not_started",
+        onboarding_completed=profile_data.onboarding_completed or False,
+        predicted_success_score=profile_data.predicted_success_score,
+        education=profile_data.education,
+        certifications=profile_data.certifications,
+        website=profile_data.website,
+        linkedin=profile_data.linkedin,
+        preferred_contact_method=profile_data.preferred_contact_method,
     )
-    
+
     db.add(profile)
     db.commit()
     db.refresh(profile)
-    
+
     return profile
 
 @router.get("/profile", response_model=ProzProfileResponse)
@@ -56,55 +74,36 @@ async def get_own_profile(
     """
     Get your own professional profile.
     """
-    profile = db.query(ProzProfile).filter(ProzProfile.email == current_user.email).first()
-    
+    profile = (
+        db.query(ProzProfile)
+        .filter(
+            (ProzProfile.user_id == current_user.id) | (ProzProfile.email == current_user.email)
+        )
+        .first()
+    )
+
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Professional profile not found. Please register first."
+            detail="Candidate profile not found. Complete onboarding or register first.",
         )
-    
+
+    if not profile.user_id:
+        profile.user_id = current_user.id
+        db.commit()
+        db.refresh(profile)
+
     return profile
 
 @router.put("/profile", response_model=ProzProfileResponse)
 async def update_own_profile(
     profile_data: ProzProfileUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    """
-    Update your own professional profile.
-    """
-    profile = db.query(ProzProfile).filter(ProzProfile.email == current_user.email).first()
-    
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Professional profile not found. Please register first."
-        )
-    
-    # Update fields
-    if profile_data.first_name is not None:
-        profile.first_name = profile_data.first_name
-    if profile_data.last_name is not None:
-        profile.last_name = profile_data.last_name
-    if profile_data.phone_number is not None:
-        profile.phone_number = profile_data.phone_number
-    if profile_data.bio is not None:
-        profile.bio = profile_data.bio
-    if profile_data.location is not None:
-        profile.location = profile_data.location
-    if profile_data.years_experience is not None:
-        profile.years_experience = profile_data.years_experience
-    if profile_data.hourly_rate is not None:
-        profile.hourly_rate = profile_data.hourly_rate
-    if profile_data.availability is not None:
-        profile.availability = profile_data.availability
-    
-    db.commit()
-    db.refresh(profile)
-    
-    return profile
+    """Update your own candidate profile."""
+    proz_service = ProzService()
+    return proz_service.update_profile_by_email(db=db, email=current_user.email, profile_data=profile_data)
 
 @router.patch("/profile", response_model=ProzProfileResponse)
 async def patch_own_profile(

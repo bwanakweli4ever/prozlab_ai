@@ -109,6 +109,9 @@ class VerificationStatsAdmin(BaseModel):
     verifications_this_week: int
     avg_verification_time_hours: float
     pending_oldest_date: Optional[datetime] = None
+    pending_skill_reviews: int = 0
+    verified_skills: int = 0
+    rejected_skills: int = 0
 
 
 class VerificationHistoryItem(BaseModel):

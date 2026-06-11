@@ -139,30 +139,7 @@ async def patch_own_profile(
     
     return profile
 
-# Add to app/modules/proz/endpoints.py
-
-@router.get("/specialties", response_model=List[str])
-async def get_specialties(
-    db: Session = Depends(get_db)
-):
-    """
-    Get all available specialties.
-    """
-    # For simplicity, return a hardcoded list of specialties for now
-    specialties = [
-        "Computer Repair",
-        "Network Installation",
-        "Web Development",
-        "Mobile App Development",
-        "Graphic Design",
-        "IT Consulting",
-        "Data Recovery",
-        "Cloud Migration",
-        "Cybersecurity"
-    ]
-    return specialties
-
-# Add to app/modules/proz/endpoints.py
+# Specialties list lives in app/modules/proz/routes.py (GET /api/v1/proz/specialties).
 
 @router.patch("/admin/verify/{profile_id}", response_model=ProzProfileResponse)
 async def verify_profile(

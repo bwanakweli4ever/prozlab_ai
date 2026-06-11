@@ -49,19 +49,16 @@ async def apply_suggestions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    profile = db.query(ProzProfile).filter(ProzProfile.email == current_user.email).first()
+    profile = (
+        db.query(ProzProfile)
+        .filter(
+            (ProzProfile.user_id == current_user.id) | (ProzProfile.email == current_user.email)
+        )
+        .first()
+    )
     if not profile:
-        # Create a new profile for this user using provided fields
-        if not update.first_name or not update.last_name:
-            # fallback from user record if names not provided
-            first_name = getattr(current_user, 'first_name', None) or getattr(current_user, 'first_name', '') or ""
-            last_name = getattr(current_user, 'last_name', None) or getattr(current_user, 'last_name', '') or ""
-        else:
-            first_name = update.first_name
-            last_name = update.last_name
-
-        if not first_name or not last_name:
-            raise HTTPException(status_code=400, detail="first_name and last_name are required to create profile")
+        first_name = (update.first_name or current_user.first_name or "Candidate").strip()
+        last_name = (update.last_name or current_user.last_name or "User").strip()
 
         profile = ProzProfile(
             user_id=current_user.id,
@@ -85,6 +82,9 @@ async def apply_suggestions(
         db.commit()
         db.refresh(profile)
         return profile
+
+    if not profile.user_id:
+        profile.user_id = current_user.id
 
     # Apply provided updates
     if update.first_name is not None:
@@ -126,7 +126,13 @@ async def review_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    profile = db.query(ProzProfile).filter(ProzProfile.email == current_user.email).first()
+    profile = (
+        db.query(ProzProfile)
+        .filter(
+            (ProzProfile.user_id == current_user.id) | (ProzProfile.email == current_user.email)
+        )
+        .first()
+    )
     if not profile:
         raise HTTPException(status_code=404, detail="Professional profile not found. Please create a profile first.")
     ai = AIProfileService()

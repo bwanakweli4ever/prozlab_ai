@@ -51,6 +51,9 @@ class AuthService:
         if not user:
             print(f"❌ Authentication failed for: {email}")
             raise AuthenticationException("Incorrect email or password")
+        if user.is_banned:
+            print(f"❌ User account banned: {email}")
+            raise AuthenticationException("Account suspended due to policy violation. Contact support.")
         if not user.is_active:
             print(f"❌ User account inactive: {email}")
             raise AuthenticationException("Inactive user account")
@@ -85,6 +88,13 @@ class AuthService:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if user.is_banned:
+            print(f"❌ User banned: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account suspended due to policy violation",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         if not user.is_active:
