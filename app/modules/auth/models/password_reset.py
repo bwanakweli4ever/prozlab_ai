@@ -1,18 +1,18 @@
 # app/modules/auth/models/password_reset.py
 from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
 
 from app.database.base_class import Base
+from app.database.types import PortableUUID
 
 
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(PortableUUID, ForeignKey("users.id"), nullable=False, index=True)
     token = Column(String(255), unique=True, nullable=False, index=True)
     is_used = Column(Boolean, default=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)

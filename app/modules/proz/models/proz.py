@@ -4,9 +4,9 @@ import enum
 
 from sqlalchemy import Column, String, Text, Integer, ForeignKey, Boolean, Float, DateTime, func
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.database.base_class import Base
+from app.database.types import PortableJSON, PortableUUID
 
 
 class VerificationStatus(str, enum.Enum):
@@ -18,10 +18,10 @@ class VerificationStatus(str, enum.Enum):
 class ProzProfile(Base):
     __tablename__ = "proz_profiles"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4, index=True)
     
     # Foreign key to User model - ADD THIS
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=True)
+    user_id = Column(PortableUUID, ForeignKey("users.id"), unique=True, nullable=True)
     
     # Basic Information
     first_name = Column(String(100), nullable=False)
@@ -39,15 +39,15 @@ class ProzProfile(Base):
     hourly_rate = Column(Float, nullable=True)
     availability = Column(String(50), nullable=True)  # full-time, part-time, contract, freelance
     experience_level = Column(String(50), nullable=True)  # e.g. "3-5 years"
-    work_types = Column(JSONB, nullable=True)  # ["full-time", "contract", ...]
-    skills = Column(JSONB, nullable=True)  # expertise / skill tags
-    portfolio_links = Column(JSONB, nullable=True)  # portfolio URLs
+    work_types = Column(PortableJSON, nullable=True)  # ["full-time", "contract", ...]
+    skills = Column(PortableJSON, nullable=True)  # expertise / skill tags
+    portfolio_links = Column(PortableJSON, nullable=True)  # portfolio URLs
     
     # Education & Skills
     education = Column(Text, nullable=True)
     certifications = Column(Text, nullable=True)
     skill_verification_status = Column(String(30), default="not_started")  # not_started, in_progress, verified
-    verification_evidences = Column(JSONB, nullable=True)  # submitted proof items (github, work samples, etc.)
+    verification_evidences = Column(PortableJSON, nullable=True)  # submitted proof items (github, work samples, etc.)
     onboarding_completed = Column(Boolean, default=False)
     predicted_success_score = Column(Float, nullable=True)
     
@@ -86,7 +86,7 @@ class Specialty(Base):
     """Specialty Model"""
     __tablename__ = "specialties"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     
@@ -102,11 +102,11 @@ class ProzSpecialty(Base):
     """Junction Table for Proz Profiles and Specialties"""
     __tablename__ = "proz_specialty"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4, index=True)
     
     # Foreign Keys
-    proz_id = Column(UUID(as_uuid=True), ForeignKey("proz_profiles.id"), nullable=False)
-    specialty_id = Column(UUID(as_uuid=True), ForeignKey("specialties.id"), nullable=False)
+    proz_id = Column(PortableUUID, ForeignKey("proz_profiles.id"), nullable=False)
+    specialty_id = Column(PortableUUID, ForeignKey("specialties.id"), nullable=False)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -120,10 +120,10 @@ class Review(Base):
     """Review Model"""
     __tablename__ = "reviews"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4, index=True)
     
     # Foreign Key
-    proz_id = Column(UUID(as_uuid=True), ForeignKey("proz_profiles.id"), nullable=False)
+    proz_id = Column(PortableUUID, ForeignKey("proz_profiles.id"), nullable=False)
     
     client_name = Column(String(100), nullable=False)
     client_email = Column(String(255), nullable=True)

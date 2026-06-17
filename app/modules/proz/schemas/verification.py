@@ -58,10 +58,24 @@ class GitHubValidateRequest(BaseModel):
     url: str
 
 
+class GitHubRepoPreview(BaseModel):
+    name: str
+    language: Optional[str] = None
+    description: Optional[str] = None
+    url: Optional[str] = None
+    stars: Optional[int] = None
+    updated_at: Optional[str] = None
+
+
 class GitHubValidateResponse(BaseModel):
     valid: bool
     username: Optional[str] = None
+    name: Optional[str] = None
+    bio: Optional[str] = None
+    avatar_url: Optional[str] = None
     public_repos: Optional[int] = None
-    followers: Optional[int] = None
+    account_created_at: Optional[str] = None
     profile_url: Optional[str] = None
+    top_repos: Optional[List[GitHubRepoPreview]] = None
+    followers: Optional[int] = None
     message: Optional[str] = None

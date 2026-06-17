@@ -684,7 +684,13 @@ class NotificationService:
                 }
             else:
                 # Production mode - send actual email
-                self.email_service._send_smtp_email(to_email, subject, html_body, text_body)
+                self.email_service.send_email(
+                    to_email=to_email,
+                    subject=subject,
+                    html_body=html_body,
+                    text_body=text_body,
+                    to_name=to_name or to_email,
+                )
                 logger.info(f"✅ {template_type} email sent to {to_email}")
                 
                 return {

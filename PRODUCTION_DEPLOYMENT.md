@@ -6,44 +6,39 @@ This guide covers deploying the ProzLab Backend to production using the provided
 
 - Ubuntu/Debian server (or similar Linux distribution)
 - Python 3.12+
-- PostgreSQL 12+
+- MySQL 8.0+ (MariaDB 10.5+ also works)
+- Node.js 18+ (for dashboard)
 - Git
-- Nginx (optional, for reverse proxy)
+- Nginx (recommended reverse proxy)
 
 ## Quick Start
 
 ### 1. Clone and Setup
 
 ```bash
-# Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/bwanakweli4ever/prozlab_ai.git prozlab_backend
 cd prozlab_backend
 
-# Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
 ### 2. Configure Environment
 
 ```bash
-# Copy environment template
 cp .env.example .env
-
-# Edit with your production values
 nano .env
 ```
 
 **Required Environment Variables:**
 ```env
-# Database
+# Database (MySQL)
+DB_DIALECT=mysql
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=3306
 DB_NAME=prozlab_db
-DB_USER=proz_user
+DB_USER=root
 DB_PASSWORD=your_secure_password
 
 # JWT
@@ -51,7 +46,12 @@ SECRET_KEY=your_very_long_random_secret_key
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=11520
 
-# Email (Mailgun)
+# Email (Mailtrap Send API — recommended)
+MAILTRAP_APIKEY=your_mailtrap_api_token
+MAILTRAP_FROM_EMAIL=noreply@yourdomain.com
+MAILTRAP_FROM_NAME=ProzLab Team
+
+# Or SMTP (Mailgun)
 SMTP_HOST=smtp.mailgun.org
 SMTP_PORT=587
 SMTP_USER=postmaster@smtp.yourdomain.com
@@ -59,19 +59,36 @@ SMTP_PASSWORD=your_mailgun_smtp_password
 EMAIL_FROM=noreply@yourdomain.com
 MAIL_SUPPORT=support@yourdomain.com
 
-# Redis (optional)
+# Optional
 REDIS_URL=redis://localhost:6379/0
+ENFORCE_EMAIL_VERIFICATION=true
 ```
 
-### 3. Database Setup
+### 3. Database Setup (MySQL)
 
 ```bash
-# Create PostgreSQL database
-sudo -u postgres psql
-CREATE DATABASE prozlab_db;
-CREATE USER proz_user WITH PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE prozlab_db TO proz_user;
-\q
+sudo mysql -u root -p
+```
+
+```sql
+CREATE DATABASE prozlab_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'proz_user'@'localhost' IDENTIFIED BY 'your_secure_password';
+GRANT ALL PRIVILEGES ON prozlab_db.* TO 'proz_user'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+**Migrating from an existing PostgreSQL database (one-time):**
+
+```bash
+# Keep PostgreSQL running temporarily; set MySQL vars in .env first
+POSTGRES_USER=proz_user POSTGRES_PASSWORD=old_pg_password python scripts/migrate_postgres_to_mysql.py
+```
+
+**Fresh MySQL server (no data to migrate):**
+
+```bash
+python scripts/setup_mysql_schema.py
 ```
 
 ### 4. Deploy

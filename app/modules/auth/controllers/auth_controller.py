@@ -2,16 +2,33 @@
 from typing import Any
 import traceback
 
-from fastapi import APIRouter, Depends, Body, HTTPException, status
+from fastapi import APIRouter, Depends, Body, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database.session import get_db
 from app.modules.auth.schemas.user import User, UserCreate, Token, UserLogin
-from app.modules.auth.services.auth_service import auth_service, get_current_user, get_current_superuser
+from app.modules.auth.services.auth_service import (
+    auth_service,
+    get_current_user_allow_unverified,
+    get_current_superuser,
+)
+from app.services.email_service import EmailService
 
 router = APIRouter()
+email_service = EmailService()
+
+
+def _send_registration_verification(email: str, user_name: str | None, user_id: str) -> None:
+    try:
+        email_service.send_verification_email(
+            email=email,
+            user_name=user_name,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        print(f"Failed to send registration verification email: {exc}")
 
 
 @router.post("/register", response_model=User)
@@ -19,6 +36,7 @@ def register(
     *,
     db: Session = Depends(get_db),
     user_in: UserCreate,
+    background_tasks: BackgroundTasks,
 ) -> Any:
     """Register a new user with improved error handling."""
     try:
@@ -38,6 +56,13 @@ def register(
         user = auth_service.create_user(db=db, user_in=user_in)
         
         print(f"✅ User created successfully: {user.id}")
+        user_name = " ".join(filter(None, [user.first_name, user.last_name])).strip() or None
+        background_tasks.add_task(
+            _send_registration_verification,
+            user.email,
+            user_name,
+            str(user.id),
+        )
         return user
         
     except HTTPException:
@@ -119,6 +144,8 @@ def login(
         print(f"✅ Login successful for: {form_data.username}")
         return {"access_token": access_token, "token_type": "bearer"}
         
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         print(f"❌ Database error during login: {str(e)}")
         try:
@@ -136,10 +163,9 @@ def login(
             db.rollback()
         except:
             pass
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password"
-        )
+        detail = getattr(e, "detail", None) or str(e) or "Incorrect email or password"
+        status_code = getattr(e, "status_code", status.HTTP_401_UNAUTHORIZED)
+        raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.post("/login/json", response_model=Token)
@@ -160,6 +186,8 @@ def login_json(
         print(f"✅ JSON login successful for: {login_data.email}")
         return {"access_token": access_token, "token_type": "bearer"}
         
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         print(f"❌ Database error during JSON login: {str(e)}")
         try:
@@ -177,15 +205,14 @@ def login_json(
             db.rollback()
         except:
             pass
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password"
-        )
+        detail = getattr(e, "detail", None) or str(e) or "Incorrect email or password"
+        status_code = getattr(e, "status_code", status.HTTP_401_UNAUTHORIZED)
+        raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("/me", response_model=User)
 def read_users_me(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_allow_unverified),
 ) -> Any:
     """Get current user."""
     return current_user

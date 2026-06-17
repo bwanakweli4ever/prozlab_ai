@@ -1,15 +1,16 @@
-from sqlalchemy import Column, String, Integer, DateTime, Boolean
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.sql import func
 import uuid
+
 from app.database.base_class import Base
+from app.database.types import PortableUUID
 
 
 class OTPVerification(Base):
     """OTP Verification Model"""
     __tablename__ = "otp_verifications"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4, index=True)
     phone_number = Column(String(20), nullable=True, index=True)  # Made nullable for email-based OTP
     email = Column(String(255), nullable=True, index=True)  # Added email field
     otp_code = Column(String(10), nullable=False)

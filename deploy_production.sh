@@ -120,9 +120,14 @@ except Exception as e:
 log "Checking current migration status..."
 alembic current
 
-# 9. Run database migrations
-log "Running database migrations..."
-alembic upgrade head
+# 9. Run database setup
+if [ "${DB_DIALECT:-mysql}" = "mysql" ]; then
+    log "Setting up MySQL schema (create_all + alembic stamp if needed)..."
+    python scripts/setup_mysql_schema.py
+else
+    log "Running PostgreSQL Alembic migrations..."
+    alembic upgrade head
+fi
 
 # 10. Verify migration was successful
 log "Verifying migration status..."
@@ -164,7 +169,7 @@ sys.path.append('.')
 from app.services.email_service import EmailService
 try:
     email_service = EmailService()
-    status = email_service.get_status()
+    status = email_service.get_service_status()
     print(f'✅ Email service status: {status}')
 except Exception as e:
     print(f'❌ Email service test failed: {e}')

@@ -1,10 +1,10 @@
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, func
 from sqlalchemy.orm import relationship
 
 from app.database.base_class import Base
+from app.database.types import PortableJSON, PortableUUID
 
 
 class OnboardingProgress(Base):
@@ -12,12 +12,12 @@ class OnboardingProgress(Base):
 
     __tablename__ = "onboarding_progress"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False, index=True)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(PortableUUID, ForeignKey("users.id"), unique=True, nullable=False, index=True)
 
     current_step = Column(Integer, default=1, nullable=False)
-    completed_steps = Column(JSONB, default=list, nullable=False)
-    step_data = Column(JSONB, default=dict, nullable=False)
+    completed_steps = Column(PortableJSON, default=list, nullable=False)
+    step_data = Column(PortableJSON, default=dict, nullable=False)
 
     is_complete = Column(Boolean, default=False, nullable=False)
 

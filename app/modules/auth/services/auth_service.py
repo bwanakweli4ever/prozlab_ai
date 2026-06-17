@@ -57,6 +57,11 @@ class AuthService:
         if not user.is_active:
             print(f"❌ User account inactive: {email}")
             raise AuthenticationException("Inactive user account")
+        if settings.ENFORCE_EMAIL_VERIFICATION and not user.is_verified and not user.is_superuser:
+            print(f"❌ User email not verified: {email}")
+            raise AuthenticationException(
+                "Please verify your email before logging in. Check your inbox for the verification link."
+            )
         
         print(f"🔍 Found user: {user}")
         print(f"✅ User authenticated successfully")
@@ -108,11 +113,24 @@ class AuthService:
 
 
 # Standalone dependency functions
+def get_current_user_allow_unverified(
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+) -> User:
+    return auth_service._get_user_from_token(db, token)
+
+
 def get_current_user(
     db: Session = Depends(get_db), 
     token: str = Depends(oauth2_scheme)
 ) -> User:
-    return auth_service._get_user_from_token(db, token)
+    user = auth_service._get_user_from_token(db, token)
+    if settings.ENFORCE_EMAIL_VERIFICATION and not user.is_verified and not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification required. Please verify your email to continue.",
+        )
+    return user
 
 def get_current_superuser(
     db: Session = Depends(get_db),

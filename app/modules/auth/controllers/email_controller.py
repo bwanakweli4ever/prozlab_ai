@@ -1,24 +1,39 @@
 # app/modules/auth/controllers/email_controller.py - FIXED IMPORTS
-from typing import Any
+from typing import Any, Literal, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Body
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.modules.auth.models.user import User
-from app.modules.auth.services.auth_service import get_current_user
+from app.modules.auth.repositories.user_repository import UserRepository
+from app.modules.auth.services.auth_service import get_current_user_allow_unverified
 from app.modules.auth.schemas.email import (
-    EmailVerificationRequest, 
-    EmailVerificationResponse, 
+    EmailVerificationRequest,
+    EmailVerificationResponse,
     EmailVerifyTokenRequest,
     EmailResendRequest,
-    EmailServiceStatus
+    EmailServiceStatus,
 )
-from app.modules.auth.services.email_service import EmailService
+from app.services.email_service import EmailService
+from app.services.notification_service import NotificationService
 from app.config.settings import settings
 
 router = APIRouter()
 email_service = EmailService()
+notification_service = NotificationService()
+user_repository = UserRepository()
+
+
+class ProfileVerificationNotificationRequest(BaseModel):
+    email: EmailStr
+    first_name: str = ""
+    last_name: str = ""
+    verification_status: Literal["verified", "rejected", "pending"]
+    admin_notes: Optional[str] = None
+    rejection_reason: Optional[str] = None
 
 
 @router.get("/status", response_model=EmailServiceStatus)
@@ -26,10 +41,11 @@ def get_email_service_status() -> Any:
     """Get email service status"""
     try:
         raw = email_service.get_service_status()
-        # Map raw service dict to the response model expected fields
         smtp_host = settings.SMTP_HOST or "unknown"
-        provider = "Mailgun" if isinstance(smtp_host, str) and "mailgun" in smtp_host else smtp_host
-        is_configured = bool(raw.get("email_configured"))
+        provider = "Mailtrap" if email_service.mailtrap_api_key else (
+            "Mailgun" if isinstance(smtp_host, str) and "mailgun" in smtp_host else str(smtp_host)
+        )
+        is_configured = bool(raw.get("email_configured") or email_service.mailtrap_api_key)
         message = "Email service running in development mode" if raw.get("development_mode") else "Email service configured for production"
         status_text = "operational" if is_configured else "not_configured"
         return {
@@ -39,7 +55,7 @@ def get_email_service_status() -> Any:
             "message": message,
             "smtp_configured": is_configured,
         }
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get email service status"
@@ -51,14 +67,14 @@ def send_verification_email(
     *,
     db: Session = Depends(get_db),
     email_request: EmailVerificationRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_allow_unverified),
 ) -> Any:
     """Send email verification"""
     try:
         result = email_service.send_verification_email(
-            db=db,
+            email=email_request.email,
+            user_name=current_user.first_name,
             user_id=str(current_user.id),
-            email=email_request.email
         )
         return result
     except ValueError as e:
@@ -72,6 +88,61 @@ def send_verification_email(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to send verification email"
         )
+
+
+@router.post("/request-verification", response_model=EmailVerificationResponse)
+def request_verification_email(
+    *,
+    db: Session = Depends(get_db),
+    email_request: EmailVerificationRequest,
+) -> Any:
+    """Public endpoint to request a verification email without logging in."""
+    user = user_repository.get_by_email(db, email_request.email)
+    if not user:
+        return {
+            "success": True,
+            "message": "If an account exists for that email, a verification link has been sent.",
+        }
+    if user.is_verified:
+        return {
+            "success": True,
+            "message": "This email address is already verified.",
+        }
+
+    user_name = " ".join(filter(None, [user.first_name, user.last_name])).strip() or None
+    return email_service.send_verification_email(
+        email=user.email,
+        user_name=user_name,
+        user_id=str(user.id),
+    )
+
+
+@router.post("/send-verification-notification")
+def send_profile_verification_notification(
+    request: ProfileVerificationNotificationRequest,
+) -> Any:
+    """Send profile approval/rejection notification (used by admin dashboard)."""
+    user_name = f"{request.first_name} {request.last_name}".strip() or "Professional"
+    is_approved = None
+    if request.verification_status == "verified":
+        is_approved = True
+    elif request.verification_status == "rejected":
+        is_approved = False
+
+    result = notification_service.send_profile_verification_notification(
+        user_email=request.email,
+        user_name=user_name,
+        is_approved=is_approved,
+        admin_notes=request.admin_notes,
+        rejection_reason=request.rejection_reason,
+        new_status=request.verification_status if is_approved is None else None,
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.get("message", "Failed to send notification email"),
+        )
+    return result
 
 
 @router.get("/verify", response_class=HTMLResponse)
@@ -97,8 +168,7 @@ def verify_email_from_link(
                 <body>
                     <div class="container">
                         <h2 class="success">✅ Email Verified Successfully!</h2>
-                        <p>Your email has been verified. You can now close this window.</p>
-                        <p><small>You may now use all features of your account.</small></p>
+                        <p>Your email has been verified. You can now close this window and log in.</p>
                     </div>
                 </body>
             </html>
@@ -174,18 +244,17 @@ def verify_email_token(
 def resend_verification_email(
     *,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_allow_unverified),
     resend_request: EmailResendRequest = Body(default=EmailResendRequest())
 ) -> Any:
     """Resend verification email to current user"""
     try:
-        # Use the email from request or fall back to current user's email
         email_to_verify = resend_request.email or current_user.email
-        
+        user_name = " ".join(filter(None, [current_user.first_name, current_user.last_name])).strip() or None
         result = email_service.send_verification_email(
-            db=db,
+            email=email_to_verify,
+            user_name=user_name,
             user_id=str(current_user.id),
-            email=email_to_verify
         )
         return result
     except ValueError as e:
@@ -262,11 +331,10 @@ def resend_verification_form(request: Request) -> Any:
                 <h2>📧 Resend Email Verification</h2>
                 
                 <div class="note">
-                    <strong>Note:</strong> If you're already logged in, we'll send the verification to your account email. 
-                    Otherwise, enter the email address below.
+                    <strong>Note:</strong> Enter the email address you used to register.
                 </div>
                 
-                <form method="post" action="/api/v1/auth/email/resend-verification">
+                <form method="post" action="/api/v1/auth/email/request-verification">
                     <div class="form-group">
                         <label for="email">Email Address:</label>
                         <input type="email" id="email" name="email" 

@@ -1,18 +1,18 @@
 # app/modules/auth/models/user.py
 from sqlalchemy import Boolean, Column, String, DateTime, Integer, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
 
 from app.database.base_class import Base
+from app.database.types import PortableJSON, PortableUUID
 
 
 class User(Base):
     __tablename__ = "users"
     
     # Override the base class id if needed
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4, index=True)
     
     # User fields
     email = Column(String(255), unique=True, index=True, nullable=False)
@@ -25,7 +25,7 @@ class User(Base):
     is_flagged = Column(Boolean, default=False)
     is_banned = Column(Boolean, default=False)
     fraud_score = Column(Integer, default=0)
-    fraud_signals = Column(JSONB, nullable=True)
+    fraud_signals = Column(PortableJSON, nullable=True)
     ban_reason = Column(Text, nullable=True)
     fraud_notes = Column(Text, nullable=True)
     flagged_at = Column(DateTime(timezone=True), nullable=True)

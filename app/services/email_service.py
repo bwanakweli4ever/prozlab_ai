@@ -312,8 +312,13 @@ class EmailService:
                 message = f"Verification email sent (development mode). Check console for verification link."
                 
             else:
-                # Production mode - send actual email
-                self._send_smtp_email(email, subject, html_body, text_body)
+                self.send_email(
+                    to_email=email,
+                    subject=subject,
+                    html_body=html_body,
+                    text_body=text_body,
+                    to_name=user_name or email,
+                )
                 message = "Verification email sent successfully"
             
             # Increment rate limit
@@ -336,6 +341,36 @@ class EmailService:
                 "error_details": str(e)
             }
     
+    def send_email(
+        self,
+        to_email: str,
+        subject: str,
+        html_body: str,
+        text_body: str,
+        to_name: Optional[str] = None,
+    ) -> None:
+        """Send email via Mailtrap, SMTP, or log in development mode."""
+        recipient_name = to_name or to_email
+
+        if self.mailtrap_api_key:
+            self._send_mailtrap_email(
+                to_email=to_email,
+                to_name=recipient_name,
+                subject=subject,
+                text_body=text_body,
+                html_body=html_body,
+            )
+            return
+
+        if self.smtp_configured:
+            self._send_smtp_email(to_email, subject, html_body, text_body)
+            return
+
+        logger.info("DEVELOPMENT MODE email to %s", to_email)
+        logger.info("Subject: %s", subject)
+        print(f"DEVELOPMENT MODE email to {to_email}")
+        print(f"Subject: {subject}")
+
     def _send_smtp_email(self, to_email: str, subject: str, html_body: str, text_body: str):
         """Send email via SMTP"""
         msg = MIMEMultipart('alternative')
@@ -596,6 +631,39 @@ class EmailService:
                 "message": "An error occurred during verification",
                 "error_code": "VERIFICATION_ERROR"
             }
+
+    def verify_email_from_token(self, db, token: str) -> Dict[str, Any]:
+        """Verify token and persist verification on the user record."""
+        from sqlalchemy import text
+
+        result = self.verify_email_token(token)
+        if not result.get("success"):
+            return result
+
+        email = result.get("email")
+        user_id = result.get("user_id")
+
+        if user_id:
+            db.execute(
+                text("UPDATE users SET is_verified = 1 WHERE id = :id"),
+                {"id": str(user_id)},
+            )
+            db.execute(
+                text("UPDATE proz_profiles SET email_verified = 1 WHERE user_id = :id"),
+                {"id": str(user_id)},
+            )
+        elif email:
+            db.execute(
+                text("UPDATE users SET is_verified = 1 WHERE email = :email"),
+                {"email": email},
+            )
+            db.execute(
+                text("UPDATE proz_profiles SET email_verified = 1 WHERE email = :email"),
+                {"email": email},
+            )
+
+        db.commit()
+        return result
     
     def get_service_status(self) -> Dict[str, Any]:
         """Get email service status"""

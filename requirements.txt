@@ -30,6 +30,7 @@ passlib==1.7.4
 Pillow==10.0.0
 propcache==0.3.2
 psycopg2-binary==2.9.7
+PyMySQL==1.1.1
 pyasn1==0.6.1
 pydantic==2.3.0
 pydantic-settings==2.0.3

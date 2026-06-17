@@ -17,7 +17,14 @@ MAX_FILE_SIZE = getattr(settings, 'MAX_FILE_SIZE', 5 * 1024 * 1024)  # 5MB defau
 UPLOAD_DIR = getattr(settings, 'UPLOAD_DIR', 'uploads')
 ALLOWED_IMAGE_TYPES = settings.ALLOWED_IMAGE_TYPES
 
-# Image sizes for different use cases
+ALLOWED_ID_DOCUMENT_TYPES = {
+    'application/pdf',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+}
+ALLOWED_ID_DOCUMENT_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.webp'}
 IMAGE_SIZES = {
     'thumbnail': (150, 150),
     'medium': (400, 400),
@@ -35,6 +42,8 @@ class FileService:
         """Create upload directories if they don't exist"""
         self.upload_dir.mkdir(exist_ok=True)
         self.profile_images_dir.mkdir(exist_ok=True)
+        self.verification_documents_dir = self.upload_dir / 'verification_documents'
+        self.verification_documents_dir.mkdir(exist_ok=True)
         
         # Create subdirectories for different image sizes
         for size_name in IMAGE_SIZES.keys():
@@ -144,7 +153,7 @@ class FileService:
                 self._resize_image(original_path, dimensions, size_path)
                 
                 # Generate URL (adjust based on your serving setup)
-                image_urls[size_name] = f"/uploads/profile_images/{size_name}/{unique_filename}"
+                image_urls[size_name] = f"/static/profile_images/{size_name}/{unique_filename}"
             
             # Clean up original if we only want processed versions
             # os.remove(original_path)  # Uncomment if you don't want to keep originals
@@ -266,4 +275,58 @@ class FileService:
                 "message": "Cleanup failed",
                 "error_code": "CLEANUP_FAILED",
                 "error_details": str(e)
+            }
+
+    def upload_verification_document(self, file: UploadFile, user_id: str) -> Dict[str, Any]:
+        """Upload a government ID or passport document for verification."""
+        try:
+            if hasattr(file.file, 'seek') and hasattr(file.file, 'tell'):
+                file.file.seek(0, 2)
+                file_size = file.file.tell()
+                file.file.seek(0)
+            else:
+                file_size = 0
+
+            if file_size and file_size > MAX_FILE_SIZE:
+                return {
+                    "success": False,
+                    "message": f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB",
+                    "error_code": "FILE_TOO_LARGE",
+                }
+
+            content_type = (file.content_type or "").lower()
+            extension = Path(file.filename or "").suffix.lower()
+            if content_type not in ALLOWED_ID_DOCUMENT_TYPES and extension not in ALLOWED_ID_DOCUMENT_EXTENSIONS:
+                return {
+                    "success": False,
+                    "message": "Upload a PDF, JPG, or PNG identity document",
+                    "error_code": "INVALID_FILE",
+                }
+
+            if extension not in ALLOWED_ID_DOCUMENT_EXTENSIONS:
+                extension = ".pdf" if content_type == "application/pdf" else ".jpg"
+
+            unique_filename = f"{user_id}_{uuid.uuid4()}{extension}"
+            destination = self.verification_documents_dir / unique_filename
+
+            with open(destination, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            final_size = destination.stat().st_size
+            file_url = f"/static/verification_documents/{unique_filename}"
+
+            return {
+                "success": True,
+                "message": "Identity document uploaded securely",
+                "file_name": unique_filename,
+                "file_size": final_size,
+                "primary_url": file_url,
+            }
+        except Exception as e:
+            logger.error(f"Error uploading verification document: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to upload identity document",
+                "error_code": "UPLOAD_FAILED",
+                "error_details": str(e),
             }

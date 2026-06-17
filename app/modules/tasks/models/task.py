@@ -1,6 +1,5 @@
 # app/modules/tasks/models/task.py
 from sqlalchemy import Column, String, Text, DateTime, Float, Boolean, ForeignKey, Enum
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -8,6 +7,7 @@ import enum
 
 # Import base from the same location as your ProzProfile model
 from app.modules.proz.models.proz import Base
+from app.database.types import PortableUUID
 
 
 class TaskStatus(enum.Enum):
@@ -31,7 +31,7 @@ class ServiceRequest(Base):
     """Service requests from companies/clients"""
     __tablename__ = "service_requests"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4)
     
     # Client Information
     company_name = Column(String(200), nullable=False)
@@ -55,8 +55,16 @@ class ServiceRequest(Base):
     remote_work_allowed = Column(Boolean, default=True)
     
     # Status and Priority
-    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
-    priority = Column(Enum(TaskPriority), default=TaskPriority.MEDIUM, nullable=False)
+    status = Column(
+        Enum(TaskStatus, native_enum=False, length=20),
+        default=TaskStatus.PENDING,
+        nullable=False,
+    )
+    priority = Column(
+        Enum(TaskPriority, native_enum=False, length=20),
+        default=TaskPriority.MEDIUM,
+        nullable=False,
+    )
     
     # Admin notes
     admin_notes = Column(Text, nullable=True)
@@ -75,12 +83,12 @@ class TaskAssignment(Base):
     """Assignment of service requests to professionals"""
     __tablename__ = "task_assignments"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4)
     
     # Foreign Keys
-    service_request_id = Column(UUID(as_uuid=True), ForeignKey("service_requests.id"), nullable=False)
-    proz_id = Column(UUID(as_uuid=True), ForeignKey("proz_profiles.id"), nullable=False)
-    assigned_by_user_id = Column(UUID(as_uuid=True), nullable=True)
+    service_request_id = Column(PortableUUID, ForeignKey("service_requests.id"), nullable=False)
+    proz_id = Column(PortableUUID, ForeignKey("proz_profiles.id"), nullable=False)
+    assigned_by_user_id = Column(PortableUUID, nullable=True)
     
     # Assignment Details
     assignment_notes = Column(Text, nullable=True)
@@ -88,7 +96,11 @@ class TaskAssignment(Base):
     proposed_rate = Column(Float, nullable=True)
     
     # Status
-    status = Column(Enum(TaskStatus), default=TaskStatus.ASSIGNED, nullable=False)
+    status = Column(
+        Enum(TaskStatus, native_enum=False, length=20),
+        default=TaskStatus.ASSIGNED,
+        nullable=False,
+    )
     
     # Response from Professional
     proz_response = Column(Text, nullable=True)
@@ -108,11 +120,11 @@ class TaskNotification(Base):
     """Notifications for task assignments and updates"""
     __tablename__ = "task_notifications"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4)
     
     # Target
-    proz_id = Column(UUID(as_uuid=True), ForeignKey("proz_profiles.id"), nullable=False)
-    task_assignment_id = Column(UUID(as_uuid=True), ForeignKey("task_assignments.id"), nullable=True)
+    proz_id = Column(PortableUUID, ForeignKey("proz_profiles.id"), nullable=False)
+    task_assignment_id = Column(PortableUUID, ForeignKey("task_assignments.id"), nullable=True)
     
     # Notification Content
     title = Column(String(200), nullable=False)

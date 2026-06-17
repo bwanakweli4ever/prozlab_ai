@@ -1,16 +1,16 @@
 # app/modules/tasks/models/service_request.py
 from sqlalchemy import Column, String, Text, DECIMAL, Boolean, DateTime
-from sqlalchemy.dialects.postgresql import UUID, ENUM
 from sqlalchemy.sql import func
 import uuid
 
 from app.database.base_class import Base
+from app.database.types import PortableUUID
 
 
 class ServiceRequest(Base):
     __tablename__ = "service_requests"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(PortableUUID, primary_key=True, default=uuid.uuid4, index=True)
     
     # Company and client information
     company_name = Column(String(200), nullable=False)
@@ -34,19 +34,8 @@ class ServiceRequest(Base):
     location_preference = Column(String(255), nullable=True)
     remote_work_allowed = Column(Boolean, default=True)
     
-    # Status and priority - Use string values that match database enum
-    status = Column(
-        ENUM('pending', 'assigned', 'accepted', 'in_progress', 'completed', 'cancelled', 'rejected', 
-             name='task_status', create_type=False),
-        nullable=False, 
-        default='pending'  # lowercase default
-    )
-    priority = Column(
-        ENUM('low', 'medium', 'high', 'urgent', 
-             name='task_priority', create_type=False),
-        nullable=False, 
-        default='medium'  # lowercase default
-    )
+    status = Column(String(20), nullable=False, default="pending")
+    priority = Column(String(20), nullable=False, default="medium")
     
     # Admin notes
     admin_notes = Column(Text, nullable=True)

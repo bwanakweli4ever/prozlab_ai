@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     DB_NAME: str
     DB_USER: str
     DB_PASSWORD: str
+    DB_DIALECT: str = "mysql"
     DATABASE_URL: Optional[str] = None
 
     # Email
@@ -42,6 +43,7 @@ class Settings(BaseSettings):
 
     # Verification
     VERIFICATION_TOKEN_EXPIRE_HOURS: int = 24
+    ENFORCE_EMAIL_VERIFICATION: bool = True
 
     # File storage
     UPLOAD_DIR: str = "uploads"
@@ -82,10 +84,21 @@ class Settings(BaseSettings):
     def get_database_url(self) -> str:
         if self.DATABASE_URL:
             return self.DATABASE_URL
+
+        from urllib.parse import quote_plus
+
+        password = quote_plus(self.DB_PASSWORD)
+        dialect = self.DB_DIALECT.lower()
+
+        if dialect in {"mysql", "mariadb"}:
+            return (
+                f"mysql+pymysql://{self.DB_USER}:{password}"
+                f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
+            )
+
         return (
-            f"postgresql://{self.DB_USER}:"
-            f"{self.DB_PASSWORD}@{self.DB_HOST}:"
-            f"{self.DB_PORT}/{self.DB_NAME}"
+            f"postgresql+psycopg2://{self.DB_USER}:{password}"
+            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
     def is_sms_enabled(self) -> bool:
