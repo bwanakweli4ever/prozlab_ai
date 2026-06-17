@@ -5,3 +5,5 @@ __pycache__/
 *.py[cod]
 uploads/
 logs/
+backups/*.sql
+backups/*.sql.gz
