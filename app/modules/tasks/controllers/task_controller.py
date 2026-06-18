@@ -11,6 +11,7 @@ from app.modules.auth.services.auth_service import auth_service, get_current_use
 from app.modules.auth.models.user import User
 from app.modules.proz.models.proz import ProzProfile, Specialty, ProzSpecialty
 from app.modules.tasks.models.task import ServiceRequest, TaskAssignment, TaskNotification, TaskStatus, TaskPriority
+from app.modules.tasks.services.task_request_service import TaskRequestService
 from app.services.notification_service import NotificationService
 from app.services.ai_profile_service import AIProfileService
 from app.modules.tasks.schemas.task import (
@@ -41,7 +42,13 @@ async def create_service_request(
     """
     Create a new service request from a company/client.
     """
-    service_request = ServiceRequest(**request.model_dump())
+    task_request_service = TaskRequestService()
+    from app.modules.tasks.schemas.task_request import BusinessTaskRequestCreate
+
+    payload = task_request_service._normalize_request_payload(
+        BusinessTaskRequestCreate(**request.model_dump())
+    )
+    service_request = ServiceRequest(**payload)
     db.add(service_request)
     db.commit()
     db.refresh(service_request)

@@ -26,6 +26,33 @@ class TaskRequestService:
     
     def __init__(self):
         self.email_service = EmailService()
+
+    def _normalize_request_payload(self, request_data: BusinessTaskRequestCreate) -> dict:
+        data = request_data.model_dump(exclude_unset=True)
+        description = (data.get("service_description") or "").strip()
+        title = (data.get("service_title") or description.split("\n")[0] or "Service request").strip()[:200]
+        if len(title) < 3:
+            title = "Service request"
+
+        email = data.get("client_email")
+        if not email:
+            digits = "".join(c for c in (data.get("client_phone") or "") if c.isdigit())
+            email = f"request+{digits or 'unknown'}@requests.prozlab.com"
+
+        priority = data.get("priority") or TaskPriorityEnum.MEDIUM
+        if hasattr(priority, "value"):
+            priority = priority.value
+
+        return {
+            **data,
+            "company_name": data.get("company_name") or data.get("client_name") or "Not specified",
+            "client_name": data.get("client_name") or "Client",
+            "client_email": email,
+            "service_title": title,
+            "service_category": data.get("service_category") or "general",
+            "priority": priority,
+            "remote_work_allowed": data.get("remote_work_allowed", True),
+        }
     
     def create_business_task_request(
         self, 
@@ -34,8 +61,8 @@ class TaskRequestService:
     ) -> BusinessTaskRequestResponse:
         """Create a new business task request"""
         try:
-            # Create service request
-            service_request = ServiceRequest(**request_data.model_dump())
+            payload = self._normalize_request_payload(request_data)
+            service_request = ServiceRequest(**payload)
             
             db.add(service_request)
             db.commit()

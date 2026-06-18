@@ -1,6 +1,6 @@
 # app/modules/tasks/schemas/task_request.py
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict, model_validator
 from datetime import datetime
 from decimal import Decimal
 import uuid
@@ -9,17 +9,15 @@ from app.modules.tasks.models.task_enums import TaskStatusEnum, TaskPriorityEnum
 
 
 class BusinessTaskRequestCreate(BaseModel):
-    """Schema for business task requests"""
-    # Company Information
-    company_name: str = Field(..., max_length=200, description="Name of the company requesting the service")
-    client_name: str = Field(..., max_length=100, description="Contact person name")
-    client_email: EmailStr = Field(..., description="Contact email address")
-    client_phone: Optional[str] = Field(None, max_length=20, description="Contact phone number")
-    
-    # Service Details
-    service_title: str = Field(..., max_length=200, description="Title of the service needed")
-    service_description: str = Field(..., description="Detailed description of the service")
-    service_category: str = Field(..., max_length=100, description="Category of service (e.g., IT, Maintenance, etc.)")
+    """Schema for business task requests — simple public form or full admin intake."""
+    company_name: Optional[str] = Field(None, max_length=200, description="Business or organization name")
+    client_name: Optional[str] = Field(None, max_length=100, description="Contact person name")
+    client_email: Optional[EmailStr] = Field(None, description="Contact email address")
+    client_phone: Optional[str] = Field(None, max_length=30, description="Contact phone number")
+
+    service_title: Optional[str] = Field(None, max_length=200, description="Title of the service needed")
+    service_description: str = Field(..., min_length=10, description="What you need help with")
+    service_category: Optional[str] = Field(None, max_length=100, description="Category of service")
     required_skills: Optional[str] = Field(None, description="Specific skills or qualifications required")
     
     # Budget and Timeline
@@ -39,6 +37,12 @@ class BusinessTaskRequestCreate(BaseModel):
     # Additional Requirements
     special_requirements: Optional[str] = Field(None, description="Any special requirements or constraints")
     preferred_start_date: Optional[datetime] = Field(None, description="Preferred start date for the work")
+
+    @model_validator(mode="after")
+    def require_contact_method(self):
+        if not self.client_email and not self.client_phone:
+            raise ValueError("Provide an email or phone number")
+        return self
     
     @field_validator('budget_max')
     @classmethod

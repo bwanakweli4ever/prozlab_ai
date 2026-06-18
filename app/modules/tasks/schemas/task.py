@@ -1,5 +1,5 @@
 # app/modules/tasks/schemas/task.py
-from pydantic import BaseModel, Field, EmailStr, field_validator
+from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime
 import uuid
@@ -25,13 +25,13 @@ class TaskPriorityEnum(str, Enum):
 
 class ServiceRequestCreate(BaseModel):
     """Schema for creating a service request"""
-    company_name: str = Field(..., min_length=2, max_length=200)
-    client_name: str = Field(..., min_length=2, max_length=100)
-    client_email: EmailStr
+    company_name: Optional[str] = Field(None, min_length=2, max_length=200)
+    client_name: Optional[str] = Field(None, min_length=2, max_length=100)
+    client_email: Optional[EmailStr] = None
     client_phone: Optional[str] = None
-    service_title: str = Field(..., min_length=5, max_length=200)
-    service_description: str = Field(..., min_length=20)
-    service_category: str = Field(..., description="Service category/specialty")
+    service_title: Optional[str] = Field(None, min_length=3, max_length=200)
+    service_description: str = Field(..., min_length=10)
+    service_category: Optional[str] = Field(None, description="Service category/specialty")
     required_skills: Optional[str] = None
     budget_min: Optional[float] = Field(None, ge=0)
     budget_max: Optional[float] = Field(None, ge=0)
@@ -40,6 +40,12 @@ class ServiceRequestCreate(BaseModel):
     location_preference: Optional[str] = None
     remote_work_allowed: bool = True
     priority: TaskPriorityEnum = TaskPriorityEnum.MEDIUM
+
+    @model_validator(mode="after")
+    def require_contact_method(self):
+        if not self.client_email and not self.client_phone:
+            raise ValueError("Provide an email or phone number")
+        return self
 
 
 class ServiceRequestResponse(BaseModel):

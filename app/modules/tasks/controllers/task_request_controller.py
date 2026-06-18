@@ -53,12 +53,12 @@ async def create_business_task_request(
                 send_service_request_notification,
                 admin_user.email,
                 f"{admin_user.first_name} {admin_user.last_name}",
-                request.company_name,
-                request.client_name,
-                request.client_email,
-                request.service_title,
-                request.service_description,
-                request.priority.value if hasattr(request.priority, 'value') else str(request.priority),
+                response.company_name,
+                response.client_name,
+                response.client_email,
+                response.service_title,
+                response.service_description,
+                response.priority.value if hasattr(response.priority, 'value') else str(response.priority),
                 response.created_at.isoformat()
             )
         
@@ -67,12 +67,12 @@ async def create_business_task_request(
             send_service_request_notification,
             "alex@mista.io",
             "Alex",
-            request.company_name,
-            request.client_name,
-            request.client_email,
-            request.service_title,
-            request.service_description,
-            request.priority.value if hasattr(request.priority, 'value') else str(request.priority),
+            response.company_name,
+            response.client_name,
+            response.client_email,
+            response.service_title,
+            response.service_description,
+            response.priority.value if hasattr(response.priority, 'value') else str(response.priority),
             response.created_at.isoformat()
         )
         
