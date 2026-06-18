@@ -8,6 +8,7 @@ import math
 
 from app.database.session import get_db
 from app.modules.proz.models.proz import ProzProfile, Specialty, ProzSpecialty, Review
+from app.modules.proz.services.proz_service import resolve_profile_by_identifier
 from app.modules.proz.schemas.public import (
     PublicProzProfileResponse,
     PublicProzProfileCard,
@@ -171,17 +172,12 @@ async def get_public_profile(
     """
     Get detailed public profile by ID with verification status consideration.
     """
-    # Build query based on verification preferences
-    if include_unverified:
-        profile = db.query(ProzProfile).filter(ProzProfile.id == profile_id).first()
-    else:
-        profile = db.query(ProzProfile).filter(
-            and_(
-                ProzProfile.id == profile_id,
-                ProzProfile.verification_status == "verified"
-            )
-        ).first()
-    
+    profile = resolve_profile_by_identifier(
+        db,
+        profile_id,
+        verified_only=not include_unverified,
+    )
+
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -459,25 +455,19 @@ async def get_profile_reviews(
     """
     Get paginated reviews for a specific profile.
     """
-    # Verify profile exists and is verified
-    profile = db.query(ProzProfile).filter(
-        and_(
-            ProzProfile.id == profile_id,
-            ProzProfile.verification_status == "verified"
-        )
-    ).first()
-    
+    profile = resolve_profile_by_identifier(db, profile_id, verified_only=True)
+
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Profile not found or not verified"
         )
-    
+
     # Get approved reviews with pagination
     offset = (page - 1) * page_size
     reviews = db.query(Review).filter(
         and_(
-            Review.proz_id == profile_id,
+            Review.proz_id == profile.id,
             Review.is_approved == True
         )
     ).order_by(Review.created_at.desc()).offset(offset).limit(page_size).all()

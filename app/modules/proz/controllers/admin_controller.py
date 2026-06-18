@@ -10,6 +10,7 @@ from app.database.session import get_db
 from app.modules.auth.services.auth_service import auth_service, get_current_user, get_current_superuser
 from app.modules.auth.models.user import User
 from app.modules.proz.models.proz import ProzProfile, Specialty, ProzSpecialty, Review
+from app.modules.proz.services.proz_service import resolve_profile_by_identifier
 from app.services.notification_service import NotificationService
 from app.modules.proz.schemas.admin import (
     ProfileVerificationRequest,
@@ -181,19 +182,19 @@ async def get_profile_for_verification(
     """
     Get detailed profile information for verification review.
     """
-    profile = db.query(ProzProfile).filter(ProzProfile.id == profile_id).first()
-    
+    profile = resolve_profile_by_identifier(db, profile_id)
+
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Profile not found"
         )
-    
+
     # Get specialties
     specialties = db.query(Specialty.name).join(ProzSpecialty).filter(
         ProzSpecialty.proz_id == profile.id
     ).all()
-    
+
     # Build detailed response
     profile_data = AdminProfileDetailResponse.model_validate(profile)
     profile_data.specialties = [s.name for s in specialties]

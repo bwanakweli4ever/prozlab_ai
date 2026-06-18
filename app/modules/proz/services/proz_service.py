@@ -18,7 +18,34 @@ from app.modules.proz.schemas.proz import (
     ProzProfileCreate, ProzProfileUpdate, 
     ProzProfileResponse
 )
+from app.modules.auth.models.user import User
 from app.config.settings import settings
+
+
+def resolve_profile_by_identifier(
+    db: Session,
+    identifier: str,
+    *,
+    verified_only: bool = False,
+) -> Optional[ProzProfile]:
+    """Resolve a profile by proz id, linked user id, or the user's account email."""
+    query = db.query(ProzProfile)
+    if verified_only:
+        query = query.filter(ProzProfile.verification_status == "verified")
+
+    profile = query.filter(ProzProfile.id == identifier).first()
+    if profile:
+        return profile
+
+    profile = query.filter(ProzProfile.user_id == identifier).first()
+    if profile:
+        return profile
+
+    user = db.query(User).filter(User.id == identifier).first()
+    if user:
+        return query.filter(ProzProfile.email == user.email).first()
+
+    return None
 
 
 class ProzService:
