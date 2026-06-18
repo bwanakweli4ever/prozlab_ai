@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # OpenAI (for AI features)
     OPENAI_API_KEY: Optional[str] = None
 
+    # Public URLs (production email links)
+    API_PUBLIC_URL: str = "https://api.prozlab.com"
+    APP_URL: str = "https://prozlab.com"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -170,10 +170,15 @@ class EmailService:
         current_data["count"] += 1
         self._store_data(key, current_data, 3600)  # 1 hour expiry
     
+    def _verification_url(self, token: str) -> str:
+        if self.development_mode:
+            return f"http://localhost:8000/api/v1/auth/email/verify?token={token}"
+        base = getattr(settings, "API_PUBLIC_URL", "https://api.prozlab.com").rstrip("/")
+        return f"{base}/api/v1/auth/email/verify?token={token}"
+
     def _create_verification_email(self, email: str, token: str, user_name: str = None) -> tuple:
         """Create verification email content"""
-        # Create verification URL
-        verification_url = f"http://localhost:8000/api/v1/auth/email/verify?token={token}"
+        verification_url = self._verification_url(token)
         
         # Email subject
         subject = f"Verify your email for {settings.PROJECT_NAME}"
@@ -302,8 +307,7 @@ class EmailService:
             subject, html_body, text_body = self._create_verification_email(email, token, user_name)
             
             if self.development_mode:
-                # Development mode - log verification link
-                verification_url = f"http://localhost:8000/api/v1/auth/email/verify?token={token}"
+                verification_url = self._verification_url(token)
                 logger.info(f"📧 DEVELOPMENT MODE - Email verification for {email}")
                 logger.info(f"🔗 Verification URL: {verification_url}")
                 print(f"📧 DEVELOPMENT MODE - Email verification for {email}")
