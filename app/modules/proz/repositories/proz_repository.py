@@ -23,9 +23,9 @@ class SpecialtyRepository:
         """Get all specialties"""
         return db.query(Specialty).all()
     
-    def create(self, db: Session, name: str) -> Specialty:
+    def create(self, db: Session, name: str, description: Optional[str] = None) -> Specialty:
         """Create a new specialty"""
-        specialty = Specialty(name=name)
+        specialty = Specialty(name=name, description=description)
         db.add(specialty)
         db.commit()
         db.refresh(specialty)
@@ -38,11 +38,20 @@ class SpecialtyRepository:
             specialty = self.create(db, name)
         return specialty
     
-    def update(self, db: Session, specialty_id: str, name: str) -> Optional[Specialty]:
-        """Update a specialty name"""
+    def update(
+        self,
+        db: Session,
+        specialty_id: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> Optional[Specialty]:
+        """Update a specialty"""
         specialty = self.get_by_id(db, specialty_id)
         if specialty:
-            specialty.name = name
+            if name is not None:
+                specialty.name = name
+            if description is not None:
+                specialty.description = description
             db.commit()
             db.refresh(specialty)
         return specialty

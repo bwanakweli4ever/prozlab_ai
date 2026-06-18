@@ -9,6 +9,9 @@ from app.modules.proz.controllers.admin_controller import router as admin_router
 from app.modules.proz.controllers.admin_skill_verification_controller import (
     router as admin_skill_verification_router,
 )
+from app.modules.proz.controllers.admin_specialties_controller import (
+    router as admin_specialties_router,
+)
 from app.modules.tasks.routes import router as task_router
 from app.modules.onboarding.routes import router as onboarding_router
 
@@ -29,5 +32,10 @@ api_router.include_router(
     admin_skill_verification_router,
     prefix="/admin/proz",
     tags=["Admin - Skill Verification"],
+)
+api_router.include_router(
+    admin_specialties_router,
+    prefix="/admin/proz",
+    tags=["Admin - Specialties"],
 )
 api_router.include_router(task_router, prefix="/tasks", tags=["Hiring & Assignments"])

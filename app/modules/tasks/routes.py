@@ -4,6 +4,9 @@ from fastapi import APIRouter
 # Import controllers
 from app.modules.tasks.controllers.task_controller import router as task_router
 from app.modules.tasks.controllers.task_request_controller import router as task_request_router
+from app.modules.tasks.controllers.admin_service_request_controller import (
+    router as admin_service_request_router,
+)
 
 # Create the main router for the tasks module
 router = APIRouter()
@@ -13,3 +16,6 @@ router.include_router(task_router, tags=["Task Management"])
 
 # Include new task request routes
 router.include_router(task_request_router, tags=["Business Task Requests"])
+
+# Admin service request detail, messages, proposals
+router.include_router(admin_service_request_router, tags=["Admin Service Requests"])

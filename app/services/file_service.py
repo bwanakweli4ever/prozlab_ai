@@ -44,6 +44,8 @@ class FileService:
         self.profile_images_dir.mkdir(exist_ok=True)
         self.verification_documents_dir = self.upload_dir / 'verification_documents'
         self.verification_documents_dir.mkdir(exist_ok=True)
+        self.proposals_dir = self.upload_dir / 'proposals'
+        self.proposals_dir.mkdir(exist_ok=True)
         
         # Create subdirectories for different image sizes
         for size_name in IMAGE_SIZES.keys():

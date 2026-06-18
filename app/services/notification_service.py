@@ -37,6 +37,10 @@ class NotificationService:
             return self._create_password_reset_email(**kwargs)
         elif template_type == "profile_verification":
             return self._create_profile_verification_email(**kwargs)
+        elif template_type == "service_request_followup":
+            return self._create_service_request_followup_email(**kwargs)
+        elif template_type == "proposal_to_client":
+            return self._create_proposal_to_client_email(**kwargs)
         else:
             raise ValueError(f"Unknown template type: {template_type}")
     
@@ -210,6 +214,86 @@ class NotificationService:
             rejection_reason=rejection_reason,
             hero=hero,
         )
+
+    def _create_service_request_followup_email(
+        self,
+        client_name: str,
+        service_title: str,
+        message_body: str,
+        subject: str = None,
+        requested_budget_min: float = None,
+        requested_budget_max: float = None,
+        requested_days: int = None,
+        request_id: str = None,
+    ) -> tuple:
+        app_url = settings.APP_URL.rstrip("/")
+        details = []
+        if requested_budget_min is not None or requested_budget_max is not None:
+            if requested_budget_min is not None and requested_budget_max is not None:
+                details.append(
+                    f"<li><strong>Budget range requested:</strong> ${requested_budget_min:,.2f} – ${requested_budget_max:,.2f}</li>"
+                )
+            elif requested_budget_min is not None:
+                details.append(f"<li><strong>Minimum budget requested:</strong> ${requested_budget_min:,.2f}</li>")
+            else:
+                details.append(f"<li><strong>Maximum budget requested:</strong> ${requested_budget_max:,.2f}</li>")
+        if requested_days is not None:
+            details.append(f"<li><strong>Timeline requested:</strong> {requested_days} day(s)</li>")
+        details_html = f"<ul style='padding-left:18px;'>{''.join(details)}</ul>" if details else ""
+        body_html = (
+            f"<p>We are reviewing your service request for <strong>{service_title}</strong> and need a few more details.</p>"
+            f"<div style='margin:16px 0;padding:14px 16px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;'>"
+            f"{message_body}</div>"
+            f"{details_html}"
+            "<p>Please reply to this email with the requested information so we can prepare your proposal.</p>"
+        )
+        email_subject = subject or f"More details needed: {service_title}"
+        return build_simple_notification_email(
+            subject=email_subject,
+            title="Service Request Follow-up",
+            greeting_name=client_name,
+            body_html=body_html,
+            cta_label="View Request Status",
+            cta_url=f"{app_url}/request-service/success" + (f"?id={request_id}" if request_id else ""),
+            hero="bell",
+        )
+
+    def _create_proposal_to_client_email(
+        self,
+        client_name: str,
+        service_title: str,
+        proposal_title: str,
+        proposal_total: float = None,
+        currency: str = "USD",
+        estimated_days: int = None,
+        public_url: str = None,
+        document_url: str = None,
+    ) -> tuple:
+        details = [f"<li><strong>Service:</strong> {service_title}</li>", f"<li><strong>Proposal:</strong> {proposal_title}</li>"]
+        if proposal_total is not None:
+            details.append(f"<li><strong>Total:</strong> {currency} {proposal_total:,.2f}</li>")
+        if estimated_days is not None:
+            details.append(f"<li><strong>Estimated timeline:</strong> {estimated_days} day(s)</li>")
+        doc_html = (
+            f"<p style='margin-top:12px;'><a href='{document_url}'>Download attached proposal document</a></p>"
+            if document_url
+            else ""
+        )
+        body_html = (
+            "<p>Your proforma / proposal is ready for review.</p>"
+            f"<ul style='padding-left:18px;'>{''.join(details)}</ul>"
+            f"{doc_html}"
+            "<p>Open the proposal online to review line items and next steps.</p>"
+        )
+        return build_simple_notification_email(
+            subject=f"Your proposal for {service_title}",
+            title="Proposal Ready",
+            greeting_name=client_name,
+            body_html=body_html,
+            cta_label="View Proposal",
+            cta_url=public_url or settings.APP_URL.rstrip("/"),
+            hero="check",
+        )
     
     def send_notification(self, template_type: str, to_email: str, to_name: str = None, **kwargs) -> Dict[str, Any]:
         """Send notification email"""
@@ -378,4 +462,60 @@ class NotificationService:
             rejection_reason=rejection_reason,
             new_status=new_status,
             old_status=old_status
+        )
+
+    def send_service_request_followup_to_client(
+        self,
+        client_name: str,
+        client_email: str,
+        service_title: str,
+        message_body: str,
+        subject: str = None,
+        requested_budget_min: float = None,
+        requested_budget_max: float = None,
+        requested_days: int = None,
+        request_id: str = None,
+    ) -> Dict[str, Any]:
+        return self.send_notification(
+            template_type="service_request_followup",
+            to_email=client_email,
+            to_name=client_name,
+            client_name=client_name,
+            service_title=service_title,
+            message_body=message_body,
+            subject=subject,
+            requested_budget_min=requested_budget_min,
+            requested_budget_max=requested_budget_max,
+            requested_days=requested_days,
+            request_id=request_id,
+        )
+
+    def send_proposal_to_client(
+        self,
+        client_name: str,
+        client_email: str,
+        service_title: str,
+        proposal_title: str,
+        proposal_total: float = None,
+        currency: str = "USD",
+        estimated_days: int = None,
+        public_url: str = None,
+        document_url: str = None,
+    ) -> Dict[str, Any]:
+        api_base = getattr(settings, "API_PUBLIC_URL", None) or settings.APP_URL.rstrip("/")
+        full_document_url = document_url
+        if document_url and document_url.startswith("/"):
+            full_document_url = f"{api_base.rstrip('/')}{document_url}"
+        return self.send_notification(
+            template_type="proposal_to_client",
+            to_email=client_email,
+            to_name=client_name,
+            client_name=client_name,
+            service_title=service_title,
+            proposal_title=proposal_title,
+            proposal_total=proposal_total,
+            currency=currency,
+            estimated_days=estimated_days,
+            public_url=public_url,
+            document_url=full_document_url,
         )
