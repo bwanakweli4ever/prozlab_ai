@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     # Public URLs (production email links)
     API_PUBLIC_URL: str = "https://api.prozlab.com"
     APP_URL: str = "https://prozlab.com"
+    BRAND_LOGO_URL: str = "https://prozlab.com/images/prozlab-logo.png"
+    BRAND_GREEN: str = "#2EAD5C"
 
     class Config:
         env_file = ".env"

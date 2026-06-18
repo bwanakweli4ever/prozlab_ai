@@ -14,6 +14,7 @@ from email import encoders
 import logging
 
 from app.config.settings import settings
+from app.services.email_templates import build_verification_email
 
 # Optional .env loader so server runs pick up root .env without process-level export
 try:
@@ -179,102 +180,12 @@ class EmailService:
     def _create_verification_email(self, email: str, token: str, user_name: str = None) -> tuple:
         """Create verification email content"""
         verification_url = self._verification_url(token)
-        
-        # Email subject
-        subject = f"Verify your email for {settings.PROJECT_NAME}"
-        
-        # HTML email body
-        html_body = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Email Verification</title>
-            <style>
-                body {{
-                    font-family: Arial, sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    max-width: 600px;
-                    margin: 0 auto;
-                    padding: 20px;
-                }}
-                .header {{
-                    background-color: #4CAF50;
-                    color: white;
-                    padding: 20px;
-                    text-align: center;
-                    border-radius: 5px 5px 0 0;
-                }}
-                .content {{
-                    background-color: #f9f9f9;
-                    padding: 30px;
-                    border-radius: 0 0 5px 5px;
-                }}
-                .button {{
-                    display: inline-block;
-                    background-color: #4CAF50;
-                    color: white;
-                    padding: 12px 30px;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    margin: 20px 0;
-                }}
-                .footer {{
-                    margin-top: 30px;
-                    padding-top: 20px;
-                    border-top: 1px solid #ddd;
-                    font-size: 12px;
-                    color: #666;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>Welcome to {settings.PROJECT_NAME}</h1>
-            </div>
-            <div class="content">
-                <h2>Verify Your Email Address</h2>
-                <p>Hello{' ' + user_name if user_name else ''},</p>
-                <p>Thank you for signing up! Please verify your email address by clicking the button below:</p>
-                
-                <div style="text-align: center;">
-                    <a href="{verification_url}" class="button">Verify Email Address</a>
-                </div>
-                
-                <p>Or copy and paste this link into your browser:</p>
-                <p style="word-break: break-all; background-color: #fff; padding: 10px; border-radius: 3px;">
-                    {verification_url}
-                </p>
-                
-                <p><strong>This verification link will expire in 24 hours.</strong></p>
-                
-                <p>If you didn't sign up for an account, you can safely ignore this email.</p>
-            </div>
-            <div class="footer">
-                <p>This email was sent from {settings.PROJECT_NAME}</p>
-                <p>Please do not reply to this email.</p>
-            </div>
-        </body>
-        </html>
-        """
-        
-        # Plain text version for email clients that don't support HTML
-        text_body = f"""
-        Welcome to {settings.PROJECT_NAME}!
-        
-        Please verify your email address by visiting this link:
-        {verification_url}
-        
-        This verification link will expire in 24 hours.
-        
-        If you didn't sign up for an account, you can safely ignore this email.
-        
-        Best regards,
-        {settings.PROJECT_NAME}
-        """
-        
-        return subject, html_body, text_body
+        return build_verification_email(
+            email=email,
+            token=token,
+            user_name=user_name,
+            verification_url=verification_url,
+        )
     
     def send_verification_email(self, email: str, user_name: str = None, user_id: int = None) -> Dict[str, Any]:
         """Send verification email"""
