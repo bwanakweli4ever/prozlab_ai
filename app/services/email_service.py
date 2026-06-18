@@ -271,7 +271,7 @@ class EmailService:
         If you didn't sign up for an account, you can safely ignore this email.
         
         Best regards,
-        The {settings.PROJECT_NAME} Team
+        {settings.PROJECT_NAME}
         """
         
         return subject, html_body, text_body

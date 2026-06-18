@@ -144,7 +144,7 @@ class NotificationService:
         If you have any questions, please contact our support team.
         
         Best regards,
-        The {settings.PROJECT_NAME} Team
+        {settings.PROJECT_NAME}
         """
         
         return subject, html_body, text_body
@@ -222,7 +222,7 @@ class NotificationService:
         View in Admin Dashboard: http://localhost:3000/admin/tasks
         
         Best regards,
-        The {settings.PROJECT_NAME} Team
+        {settings.PROJECT_NAME}
         """
         
         return subject, html_body, text_body
@@ -302,7 +302,7 @@ class NotificationService:
         Assign to Another Professional: http://localhost:3000/admin/tasks
         
         Best regards,
-        The {settings.PROJECT_NAME} Team
+        {settings.PROJECT_NAME}
         """
         
         return subject, html_body, text_body
@@ -400,7 +400,7 @@ class NotificationService:
         Review Request: http://localhost:3000/admin/service-requests
         
         Best regards,
-        The {settings.PROJECT_NAME} Team
+        {settings.PROJECT_NAME}
         """
         
         return subject, html_body, text_body
@@ -462,7 +462,7 @@ class NotificationService:
         This verification link will expire in 24 hours.
         
         Best regards,
-        The {settings.PROJECT_NAME} Team
+        {settings.PROJECT_NAME}
         """
         
         return subject, html_body, text_body
@@ -534,7 +534,7 @@ class NotificationService:
         - Your password will remain unchanged until you create a new one
         
         Best regards,
-        The {settings.PROJECT_NAME} Team
+        {settings.PROJECT_NAME}
         """
         
         return subject, html_body, text_body
@@ -615,7 +615,7 @@ class NotificationService:
                 
                 <p>If you have any questions, please contact our support team at {settings.MAIL_SUPPORT or 'support@prozlab.com'}.</p>
                 
-                <p>Best regards,<br>The {settings.PROJECT_NAME} Team</p>
+                <p>Best regards,<br>{settings.PROJECT_NAME}</p>
             </div>
             <div class="footer">
                 <p>This email was sent from {settings.PROJECT_NAME}</p>
@@ -657,7 +657,7 @@ class NotificationService:
         If you have any questions, please contact our support team at {settings.MAIL_SUPPORT or 'support@prozlab.com'}.
         
         Best regards,
-        The {settings.PROJECT_NAME} Team
+        {settings.PROJECT_NAME}
         """
         
         return subject, html_body, text_body
