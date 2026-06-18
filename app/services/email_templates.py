@@ -5,8 +5,17 @@ from __future__ import annotations
 import html
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlencode
 
 from app.config.settings import settings
+
+
+def frontend_verification_url(token: str, *, development: bool = False) -> str:
+    """Link users open in the browser — handled by the dashboard, not the API HTML page."""
+    if development:
+        return f"http://localhost:3000/verify-email?{urlencode({'token': token})}"
+    app_url = getattr(settings, "APP_URL", "https://prozlab.com").rstrip("/")
+    return f"{app_url}/verify-email?{urlencode({'token': token})}"
 
 
 def _esc(value: Optional[str]) -> str:

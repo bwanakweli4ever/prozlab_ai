@@ -14,7 +14,7 @@ from email import encoders
 import logging
 
 from app.config.settings import settings
-from app.services.email_templates import build_verification_email
+from app.services.email_templates import build_verification_email, frontend_verification_url
 
 # Optional .env loader so server runs pick up root .env without process-level export
 try:
@@ -172,10 +172,7 @@ class EmailService:
         self._store_data(key, current_data, 3600)  # 1 hour expiry
     
     def _verification_url(self, token: str) -> str:
-        if self.development_mode:
-            return f"http://localhost:8000/api/v1/auth/email/verify?token={token}"
-        base = getattr(settings, "API_PUBLIC_URL", "https://api.prozlab.com").rstrip("/")
-        return f"{base}/api/v1/auth/email/verify?token={token}"
+        return frontend_verification_url(token, development=self.development_mode)
 
     def _create_verification_email(self, email: str, token: str, user_name: str = None) -> tuple:
         """Create verification email content"""

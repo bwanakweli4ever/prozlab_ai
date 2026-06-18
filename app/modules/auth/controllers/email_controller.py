@@ -2,7 +2,7 @@
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Body
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
@@ -145,76 +145,16 @@ def send_profile_verification_notification(
     return result
 
 
-@router.get("/verify", response_class=HTMLResponse)
+@router.get("/verify")
 def verify_email_from_link(
     token: str = Query(..., description="Verification token"),
-    db: Session = Depends(get_db)
 ) -> Any:
-    """Verify email from link (typically clicked in email)"""
-    try:
-        result = email_service.verify_email_from_token(db=db, token=token)
-        
-        if result["success"]:
-            return """
-            <html>
-                <head>
-                    <title>Email Verified</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
-                        .success { color: #28a745; }
-                        .container { border: 1px solid #ddd; border-radius: 8px; padding: 40px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <h2 class="success">✅ Email Verified Successfully!</h2>
-                        <p>Your email has been verified. You can now close this window and log in.</p>
-                    </div>
-                </body>
-            </html>
-            """
-        else:
-            return f"""
-            <html>
-                <head>
-                    <title>Email Verification Failed</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }}
-                        .error {{ color: #dc3545; }}
-                        .container {{ border: 1px solid #ddd; border-radius: 8px; padding: 40px; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <h2 class="error">❌ Email Verification Failed</h2>
-                        <p>Error: {result.get('message', 'Unknown error')}</p>
-                        <p><small>Please try requesting a new verification email.</small></p>
-                    </div>
-                </body>
-            </html>
-            """
-            
-    except Exception as e:
-        print(f"❌ Error in email verification: {str(e)}")
-        return f"""
-        <html>
-            <head>
-                <title>Email Verification Error</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }}
-                    .error {{ color: #dc3545; }}
-                    .container {{ border: 1px solid #ddd; border-radius: 8px; padding: 40px; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h2 class="error">❌ Email Verification Error</h2>
-                    <p>An error occurred: {str(e)}</p>
-                    <p><small>Please contact support if this problem persists.</small></p>
-                </div>
-            </body>
-        </html>
-        """
+    """Redirect legacy API verify links to the dashboard verify page."""
+    app_url = getattr(settings, "APP_URL", "https://prozlab.com").rstrip("/")
+    return RedirectResponse(
+        url=f"{app_url}/verify-email?token={token}",
+        status_code=302,
+    )
 
 
 @router.post("/verify-token", response_model=EmailVerificationResponse)
