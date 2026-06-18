@@ -39,6 +39,32 @@ async def list_specialties_admin(
     return [_to_admin_response(db, row) for row in rows]
 
 
+@router.post("/specialties/seed", response_model=dict)
+async def seed_specialties_admin(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superuser),
+) -> Any:
+    from app.modules.onboarding.constants import HIRING_SPECIALTIES
+
+    created = 0
+    updated = 0
+    for name, description in HIRING_SPECIALTIES:
+        existing = specialty_repo.get_by_name(db, name)
+        if existing:
+            if description and existing.description != description:
+                existing.description = description
+                updated += 1
+            continue
+        specialty_repo.create(db, name, description)
+        created += 1
+    return {
+        "created": created,
+        "updated": updated,
+        "total_defined": len(HIRING_SPECIALTIES),
+        "total_in_db": db.query(Specialty).count(),
+    }
+
+
 @router.post("/specialties", response_model=SpecialtyAdminResponse, status_code=status.HTTP_201_CREATED)
 async def create_specialty_admin(
     payload: SpecialtyCreate,
