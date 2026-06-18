@@ -65,8 +65,18 @@ class EmailService:
             or os.getenv('MAILTRAP_FROM_NAME')
             or getattr(settings, 'PROJECT_NAME', 'ProzLab')
         )
-        self.mailtrap_reply_email = getattr(settings, 'MAILTRAP_REPLY_EMAIL', None) or os.getenv('MAILTRAP_REPLY_EMAIL')
-        self.mailtrap_reply_name = getattr(settings, 'MAILTRAP_REPLY_NAME', None) or os.getenv('MAILTRAP_REPLY_NAME')
+        self.mailtrap_reply_email = (
+            getattr(settings, "MAILTRAP_REPLY_EMAIL", None)
+            or os.getenv("MAILTRAP_REPLY_EMAIL")
+            or getattr(settings, "MAIL_SUPPORT", None)
+            or os.getenv("MAIL_SUPPORT")
+            or "support@prozlab.com"
+        )
+        self.mailtrap_reply_name = (
+            getattr(settings, "MAILTRAP_REPLY_NAME", None)
+            or os.getenv("MAILTRAP_REPLY_NAME")
+            or getattr(settings, "PROJECT_NAME", "Prozlab Support")
+        )
 
         # Treat Mailtrap as production-capable as well
         self.development_mode = not (self.smtp_configured or self.mailtrap_api_key)
@@ -260,9 +270,13 @@ class EmailService:
         html_body: str,
         text_body: str,
         to_name: Optional[str] = None,
+        reply_to_email: Optional[str] = None,
+        reply_to_name: Optional[str] = None,
     ) -> None:
         """Send email via Mailtrap, SMTP, or log in development mode."""
         recipient_name = to_name or to_email
+        reply_email = reply_to_email or self.mailtrap_reply_email
+        reply_name = reply_to_name or self.mailtrap_reply_name
 
         if self.mailtrap_api_key:
             self._send_mailtrap_email(
@@ -271,11 +285,20 @@ class EmailService:
                 subject=subject,
                 text_body=text_body,
                 html_body=html_body,
+                reply_to_email=reply_email,
+                reply_to_name=reply_name,
             )
             return
 
         if self.smtp_configured:
-            self._send_smtp_email(to_email, subject, html_body, text_body)
+            self._send_smtp_email(
+                to_email,
+                subject,
+                html_body,
+                text_body,
+                reply_to_email=reply_email,
+                reply_to_name=reply_name,
+            )
             return
 
         logger.info("DEVELOPMENT MODE email to %s", to_email)
@@ -283,15 +306,22 @@ class EmailService:
         print(f"DEVELOPMENT MODE email to {to_email}")
         print(f"Subject: {subject}")
 
-    def _send_smtp_email(self, to_email: str, subject: str, html_body: str, text_body: str):
+    def _send_smtp_email(
+        self,
+        to_email: str,
+        subject: str,
+        html_body: str,
+        text_body: str,
+        reply_to_email: Optional[str] = None,
+        reply_to_name: Optional[str] = None,
+    ):
         """Send email via SMTP"""
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = settings.EMAIL_FROM
         msg['To'] = to_email
-        # Dynamic Reply-To if configured via settings/env
-        reply_email = getattr(self, 'mailtrap_reply_email', None)
-        reply_name = getattr(self, 'mailtrap_reply_name', None)
+        reply_email = reply_to_email or self.mailtrap_reply_email
+        reply_name = reply_to_name or self.mailtrap_reply_name
         if reply_email:
             msg['Reply-To'] = f"{reply_name} <{reply_email}>" if reply_name else reply_email
         
@@ -310,7 +340,18 @@ class EmailService:
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.send_message(msg)
 
-    def _send_mailtrap_email(self, to_email: str, to_name: str, subject: str, text_body: str, html_body: Optional[str] = None, cc: Optional[list] = None, bcc: Optional[list] = None):
+    def _send_mailtrap_email(
+        self,
+        to_email: str,
+        to_name: str,
+        subject: str,
+        text_body: str,
+        html_body: Optional[str] = None,
+        cc: Optional[list] = None,
+        bcc: Optional[list] = None,
+        reply_to_email: Optional[str] = None,
+        reply_to_name: Optional[str] = None,
+    ):
         """Send email using Mailtrap Send API if configured."""
         if not self.mailtrap_api_key:
             raise RuntimeError("MAILTRAP_APIKEY not configured")
@@ -329,8 +370,10 @@ class EmailService:
 
         if html_body:
             payload["html"] = html_body
-        if self.mailtrap_reply_email:
-            payload["reply_to"] = {"email": self.mailtrap_reply_email, "name": self.mailtrap_reply_name or self.mailtrap_reply_email}
+        reply_email = reply_to_email or self.mailtrap_reply_email
+        reply_name = reply_to_name or self.mailtrap_reply_name
+        if reply_email:
+            payload["reply_to"] = {"email": reply_email, "name": reply_name or reply_email}
         if cc:
             payload["cc"] = cc
         if bcc:

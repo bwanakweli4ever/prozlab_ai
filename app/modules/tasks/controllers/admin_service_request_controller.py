@@ -1,10 +1,10 @@
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.config.settings import settings
@@ -359,3 +359,37 @@ async def get_public_proposal(token: str, db: Session = Depends(get_db)) -> Any:
     if not proposal:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proposal not found")
     return _serialize_proposal(proposal)
+
+
+@router.get("/admin/notifications")
+async def get_admin_notifications(
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superuser),
+) -> Any:
+    """Recent service requests for the admin notification bell."""
+    since = datetime.utcnow() - timedelta(days=30)
+    rows = (
+        db.query(ServiceRequest)
+        .filter(ServiceRequest.created_at >= since)
+        .order_by(ServiceRequest.created_at.desc())
+        .limit(min(limit, 50))
+        .all()
+    )
+    return {
+        "notifications": [
+            {
+                "id": str(row.id),
+                "type": "service_request",
+                "title": row.service_title,
+                "company_name": row.company_name,
+                "client_name": row.client_name,
+                "client_email": row.client_email,
+                "status": row.status.value if hasattr(row.status, "value") else str(row.status),
+                "priority": row.priority.value if hasattr(row.priority, "value") else str(row.priority),
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ],
+        "total": len(rows),
+    }

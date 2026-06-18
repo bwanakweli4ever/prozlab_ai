@@ -225,8 +225,10 @@ class NotificationService:
         requested_budget_max: float = None,
         requested_days: int = None,
         request_id: str = None,
+        support_email: str = None,
     ) -> tuple:
         app_url = settings.APP_URL.rstrip("/")
+        support = support_email or getattr(settings, "MAIL_SUPPORT", None) or "support@prozlab.com"
         details = []
         if requested_budget_min is not None or requested_budget_max is not None:
             if requested_budget_min is not None and requested_budget_max is not None:
@@ -245,7 +247,9 @@ class NotificationService:
             f"<div style='margin:16px 0;padding:14px 16px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;'>"
             f"{message_body}</div>"
             f"{details_html}"
-            "<p>Please reply to this email with the requested information so we can prepare your proposal.</p>"
+            f"<p>Please send the requested information to "
+            f"<a href='mailto:{support}' style='color:#4F46E5;font-weight:600;'>{support}</a> "
+            f"so we can prepare your proposal.</p>"
         )
         email_subject = subject or f"More details needed: {service_title}"
         return build_simple_notification_email(
@@ -295,11 +299,23 @@ class NotificationService:
             hero="check",
         )
     
-    def send_notification(self, template_type: str, to_email: str, to_name: str = None, **kwargs) -> Dict[str, Any]:
+    def send_notification(
+        self,
+        template_type: str,
+        to_email: str,
+        to_name: str = None,
+        reply_to_email: str = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
         """Send notification email"""
         try:
             # Create email content
             subject, html_body, text_body = self._create_email_template(template_type, **kwargs)
+            support = reply_to_email or getattr(settings, "MAIL_SUPPORT", None) or "support@prozlab.com"
+
+            if template_type in ("service_request_followup", "proposal_to_client"):
+                if support not in text_body:
+                    text_body += f"\n\nContact us at {support} with any questions."
             
             if self.email_service.development_mode:
                 # Development mode - log email details
@@ -323,6 +339,7 @@ class NotificationService:
                     html_body=html_body,
                     text_body=text_body,
                     to_name=to_name or to_email,
+                    reply_to_email=reply_to_email or support,
                 )
                 logger.info(f"✅ {template_type} email sent to {to_email}")
                 
@@ -476,10 +493,12 @@ class NotificationService:
         requested_days: int = None,
         request_id: str = None,
     ) -> Dict[str, Any]:
+        support = getattr(settings, "MAIL_SUPPORT", None) or "support@prozlab.com"
         return self.send_notification(
             template_type="service_request_followup",
             to_email=client_email,
             to_name=client_name,
+            reply_to_email=support,
             client_name=client_name,
             service_title=service_title,
             message_body=message_body,
@@ -488,6 +507,7 @@ class NotificationService:
             requested_budget_max=requested_budget_max,
             requested_days=requested_days,
             request_id=request_id,
+            support_email=support,
         )
 
     def send_proposal_to_client(

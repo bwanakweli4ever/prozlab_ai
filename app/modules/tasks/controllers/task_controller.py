@@ -146,11 +146,8 @@ async def get_service_requests_admin(
     if category:
         query_obj = query_obj.filter(ServiceRequest.service_category.ilike(f"%{category}%"))
     
-    # Sort by priority and created date
-    query_obj = query_obj.order_by(
-        ServiceRequest.priority.desc(),
-        ServiceRequest.created_at.desc()
-    )
+    # Sort newest requests first
+    query_obj = query_obj.order_by(ServiceRequest.created_at.desc())
     
     # Pagination
     total_count = query_obj.count()
