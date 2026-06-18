@@ -13,12 +13,15 @@ down_revision = "d5f9a3b2c104"
 branch_labels = None
 depends_on = None
 
+# MySQL stores UUIDs as varchar(36) (matches PortableUUID in app models)
+UUID_COL = sa.String(36)
+
 
 def upgrade() -> None:
     op.create_table(
         "service_request_messages",
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("service_request_id", sa.UUID(), nullable=False),
+        sa.Column("id", UUID_COL, nullable=False),
+        sa.Column("service_request_id", UUID_COL, nullable=False),
         sa.Column("author_type", sa.String(length=20), nullable=False),
         sa.Column("author_name", sa.String(length=120), nullable=False),
         sa.Column("author_email", sa.String(length=255), nullable=True),
@@ -29,7 +32,7 @@ def upgrade() -> None:
         sa.Column("requested_budget_max", sa.Float(), nullable=True),
         sa.Column("requested_days", sa.Integer(), nullable=True),
         sa.Column("email_sent", sa.Boolean(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
         sa.ForeignKeyConstraint(["service_request_id"], ["service_requests.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -37,9 +40,9 @@ def upgrade() -> None:
 
     op.create_table(
         "service_request_proposals",
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("service_request_id", sa.UUID(), nullable=False),
-        sa.Column("created_by_user_id", sa.UUID(), nullable=True),
+        sa.Column("id", UUID_COL, nullable=False),
+        sa.Column("service_request_id", UUID_COL, nullable=False),
+        sa.Column("created_by_user_id", UUID_COL, nullable=True),
         sa.Column("proposal_type", sa.String(length=20), nullable=False),
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("introduction", sa.Text(), nullable=True),
@@ -55,10 +58,10 @@ def upgrade() -> None:
         sa.Column("public_token", sa.String(length=64), nullable=False),
         sa.Column("document_url", sa.String(length=500), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("sent_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("valid_until", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
+        sa.Column("sent_at", sa.DateTime(), nullable=True),
+        sa.Column("valid_until", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
         sa.ForeignKeyConstraint(["service_request_id"], ["service_requests.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("public_token"),
