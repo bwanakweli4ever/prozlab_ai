@@ -1,4 +1,6 @@
 # app/modules/auth/controllers/email_controller.py - FIXED IMPORTS
+import html
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Body
@@ -9,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.modules.auth.models.user import User
 from app.modules.auth.repositories.user_repository import UserRepository
-from app.modules.auth.services.auth_service import get_current_user_allow_unverified
+from app.modules.auth.services.auth_service import get_current_superuser, get_current_user_allow_unverified
 from app.modules.auth.schemas.email import (
     EmailVerificationRequest,
     EmailVerificationResponse,
@@ -286,3 +288,71 @@ def resend_verification_form(request: Request) -> Any:
         </body>
     </html>
     """
+
+
+class EmailTestRequest(BaseModel):
+    email: Optional[EmailStr] = None
+
+
+class EmailTestResponse(BaseModel):
+    success: bool
+    provider: str
+    sent_to: str
+    message: str
+
+
+@router.post("/test", response_model=EmailTestResponse)
+def send_test_email(
+    *,
+    current_user: User = Depends(get_current_superuser),
+    body: EmailTestRequest = Body(default_factory=EmailTestRequest),
+) -> Any:
+    """Admin only: send a test email to check delivery. Defaults to the signed-in admin's address."""
+    to_email = str(body.email or current_user.email)
+    if email_service.mailtrap_api_key:
+        provider = "Mailtrap"
+    elif email_service.smtp_configured:
+        provider = "SMTP"
+    else:
+        return {
+            "success": False,
+            "provider": "none",
+            "sent_to": to_email,
+            "message": "No email provider is configured. Set MAILTRAP_APIKEY in the backend .env.",
+        }
+
+    sent_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    text_body = (
+        "This is a test email from Prozlab.\n\n"
+        f"Provider: {provider}\nSent at: {sent_at}\n"
+        f"Requested by: {current_user.email}\n\n"
+        "If you can read this, email delivery from prozlab.com works."
+    )
+    html_body = (
+        "<div style=\"font-family:Arial,sans-serif;font-size:15px;color:#0F172A\">"
+        "<h2 style=\"margin:0 0 12px\">Prozlab test email</h2>"
+        "<p>If you can read this, email delivery from prozlab.com works.</p>"
+        f"<p style=\"color:#475569\">Provider: {provider}<br>Sent at: {sent_at}<br>"
+        f"Requested by: {html.escape(str(current_user.email))}</p>"
+        "</div>"
+    )
+    try:
+        email_service.send_email(
+            to_email=to_email,
+            subject="Prozlab test email",
+            html_body=html_body,
+            text_body=text_body,
+        )
+    except Exception as e:  # report the provider's error to the admin instead of a bare 500
+        return {
+            "success": False,
+            "provider": provider,
+            "sent_to": to_email,
+            "message": f"Send failed: {str(e)[:500]}",
+        }
+    return {
+        "success": True,
+        "provider": provider,
+        "sent_to": to_email,
+        "message": f"Sent at {sent_at}. Check the inbox (and spam folder) of {to_email}.",
+    }
