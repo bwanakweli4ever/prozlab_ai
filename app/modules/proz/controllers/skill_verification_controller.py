@@ -102,11 +102,11 @@ def _readable_evidences(items: list) -> list:
 
 def _status_response(profile: ProzProfile) -> VerificationStatusResponse:
     items = evidences(profile)
-    reqs = requirements_met(items)
+    reqs = requirements_met(items, profile)
     meta = get_meta(profile)
     return VerificationStatusResponse(
         skill_verification_status=profile.skill_verification_status or "not_started",
-        verification_score=compute_score(items),
+        verification_score=compute_score(items, profile),
         evidences=_readable_evidences(items),
         requirements_met=reqs,
         can_submit=all(reqs.values()) and profile.skill_verification_status not in {
@@ -234,7 +234,7 @@ async def submit_for_review(
 ):
     profile = _get_profile(db, current_user)
     items = evidences(profile)
-    reqs = requirements_met(items)
+    reqs = requirements_met(items, profile)
     if not all(reqs.values()):
         raise HTTPException(
             status_code=400,

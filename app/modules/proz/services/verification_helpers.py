@@ -42,7 +42,7 @@ def save_evidences(
     profile.verification_evidences = items
 
 
-def compute_score(evidences_list: List[Dict[str, Any]]) -> int:
+def compute_score(evidences_list: List[Dict[str, Any]], profile: Optional[ProzProfile] = None) -> int:
     weights = {
         "github": 25,
         "portfolio": 15,
@@ -53,7 +53,8 @@ def compute_score(evidences_list: List[Dict[str, Any]]) -> int:
         "previous_employer": 15,
         "identity_document": 20,
     }
-    score = 0
+    # The CV on the profile is the work-experience proof; nobody retypes their past jobs.
+    score = 25 if profile is not None and getattr(profile, "resume_filename", None) else 0
     seen_types: set[str] = set()
     for item in evidences_list:
         t = item.get("type")
@@ -63,17 +64,14 @@ def compute_score(evidences_list: List[Dict[str, Any]]) -> int:
     return min(score, 100)
 
 
-def requirements_met(evidences_list: List[Dict[str, Any]]) -> Dict[str, bool]:
+def requirements_met(evidences_list: List[Dict[str, Any]], profile: Optional[ProzProfile] = None) -> Dict[str, bool]:
+    """Two steps to submit for review: prove who you are, and have your CV on the profile.
+
+    Portfolio, work samples, references and certifications are optional extras that raise the score."""
     types = {e.get("type") for e in evidences_list}
-    has_work_exp = bool(types & WORK_EXPERIENCE_TYPES) or any(
-        e.get("type") == "previous_employer" for e in evidences_list
-    )
     return {
         "identity_link": bool(types & IDENTITY_TYPES),
-        "work_proof": bool(types & {"portfolio", "work_sample", "github", "previous_employer"}),
-        "work_experience": has_work_exp,
-        "third_party": bool(types & {"recommendation", "previous_employer", "certification"}),
-        "minimum_items": len(evidences_list) >= 2,
+        "cv_on_profile": bool(profile is not None and getattr(profile, "resume_filename", None)),
     }
 
 

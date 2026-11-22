@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from fastapi import UploadFile, HTTPException, status
-from PIL import Image
+from PIL import Image, ImageOps, UnidentifiedImageError
 import logging
 
 from app.config.settings import settings
@@ -103,6 +103,8 @@ class FileService:
         """Resize image to specified dimensions"""
         try:
             with Image.open(image_path) as img:
+                # Phone photos store their rotation in EXIF; apply it so pictures aren't sideways.
+                img = ImageOps.exif_transpose(img)
                 # Convert RGBA to RGB if necessary (for JPEG)
                 if img.mode in ('RGBA', 'LA', 'P'):
                     # Create a white background
@@ -150,7 +152,19 @@ class FileService:
             
             # Get file size
             file_size = original_path.stat().st_size
-            
+
+            # Make sure it's really a picture before processing (a renamed or broken file would crash the resize)
+            try:
+                with Image.open(original_path) as probe:
+                    probe.verify()
+            except (UnidentifiedImageError, OSError, SyntaxError, ValueError):
+                original_path.unlink(missing_ok=True)
+                return {
+                    "success": False,
+                    "message": "That file isn't a picture we can read. Upload a JPG or PNG photo.",
+                    "error_code": "INVALID_FILE",
+                }
+
             # Create different sized versions
             image_urls = {}
             for size_name, dimensions in IMAGE_SIZES.items():

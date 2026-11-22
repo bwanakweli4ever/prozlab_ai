@@ -45,7 +45,7 @@ def _to_list_item(profile: ProzProfile) -> SkillVerificationListItem:
         years_experience=profile.years_experience,
         verification_status=profile.verification_status or "pending",
         skill_verification_status=profile.skill_verification_status or "not_started",
-        verification_score=compute_score(items),
+        verification_score=compute_score(items, profile),
         evidence_count=len(items),
         identity_items=len([e for e in items if e.get("type") in IDENTITY_TYPES]),
         work_experience_items=len([e for e in items if e.get("type") in WORK_EXPERIENCE_TYPES]),
@@ -128,7 +128,7 @@ async def get_skill_verification_detail(
     return SkillVerificationDetailResponse(
         profile=_to_list_item(profile),
         evidences=[EvidenceItem(**e) for e in items],
-        requirements_met=requirements_met(items),
+        requirements_met=requirements_met(items, profile),
         admin_notes=meta.get("admin_notes"),
         reviewed_at=meta.get("reviewed_at"),
         reviewed_by=meta.get("reviewed_by"),
@@ -175,7 +175,7 @@ async def review_skill_verification(
     return SkillVerificationDetailResponse(
         profile=_to_list_item(profile),
         evidences=[EvidenceItem(**e) for e in items],
-        requirements_met=requirements_met(items),
+        requirements_met=requirements_met(items, profile),
         admin_notes=meta.get("admin_notes"),
         reviewed_at=meta.get("reviewed_at"),
         reviewed_by=meta.get("reviewed_by"),
