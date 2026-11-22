@@ -1,0 +1,9 @@
+[Unit]
+Description=Run Prozlab profile reminders every day at 10:00 AM US Eastern
+
+[Timer]
+OnCalendar=*-*-* 10:00:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

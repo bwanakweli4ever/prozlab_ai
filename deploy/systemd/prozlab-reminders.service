@@ -1,0 +1,8 @@
+[Unit]
+Description=Prozlab daily "finish your profile" reminder emails
+After=network-online.target mysql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/www/prozlab/backend
+ExecStart=/var/www/prozlab/backend/venv/bin/python -m app.scripts.send_profile_reminders

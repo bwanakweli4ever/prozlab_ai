@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database.session import SessionLocal, get_db
 from app.modules.auth.models.user import User
 from app.modules.auth.services.auth_service import get_current_superuser
+from app.config.settings import settings
 from app.services import profile_reminder
 from app.services.email_service import EmailService
 
@@ -25,6 +26,15 @@ class RecipientOut(BaseModel):
     steps_total: int
     missing: List[str]
     last_reminded_at: Optional[datetime] = None
+    reminders_sent: int = 0
+
+
+class AutoReminderInfo(BaseModel):
+    enabled: bool
+    schedule: str
+    interval_days: int
+    max_reminders: int
+    min_account_age_days: int
 
 
 class ReminderOverview(BaseModel):
@@ -34,6 +44,7 @@ class ReminderOverview(BaseModel):
     skip_recent_days: int
     recipients: List[RecipientOut]
     preview_html: str
+    auto: AutoReminderInfo
 
 
 class ReminderTestRequest(BaseModel):
@@ -77,10 +88,18 @@ def overview(
                 steps_total=len(r.steps),
                 missing=[s.label for s in r.steps if not s.done],
                 last_reminded_at=r.user.profile_reminder_sent_at,
+                reminders_sent=r.user.profile_reminder_count or 0,
             )
             for r in recipients[:200]
         ],
         preview_html=preview_html,
+        auto=AutoReminderInfo(
+            enabled=bool(getattr(settings, "PROFILE_REMINDERS_AUTO", False)),
+            schedule=profile_reminder.AUTO_SCHEDULE,
+            interval_days=profile_reminder.REMINDER_INTERVAL_DAYS,
+            max_reminders=profile_reminder.MAX_REMINDERS,
+            min_account_age_days=profile_reminder.MIN_ACCOUNT_AGE_DAYS,
+        ),
     )
 
 
@@ -103,34 +122,14 @@ def send_test(
 
 def _send_all(user_ids: List[str]) -> None:
     db = SessionLocal()
-    sent = failed = 0
     try:
-        for user_id in user_ids:
-            user = db.query(User).filter(User.id == user_id).first()
-            if not user:
-                continue
-            steps = profile_reminder.checklist(profile_reminder.profile_for(db, user))
-            if all(s.done for s in steps):
-                continue
-            subject, html_body, text_body = profile_reminder.render(user.first_name, steps)
-            try:
-                email_service.send_email(
-                    to_email=user.email,
-                    to_name=" ".join(filter(None, [user.first_name, user.last_name])) or None,
-                    subject=subject,
-                    html_body=html_body,
-                    text_body=text_body,
-                )
-                user.profile_reminder_sent_at = datetime.now(timezone.utc)
-                db.commit()
-                sent += 1
-            except Exception as e:
-                db.rollback()
-                failed += 1
-                logger.error(f"Profile reminder to {user.email} failed: {e}")
+        wanted = set(user_ids)
+        # Re-check eligibility at send time (same limits as the overview), then send.
+        recipients, _ = profile_reminder.find_recipients(db)
+        sent, failed = profile_reminder.send_to(db, [r for r in recipients if str(r.user.id) in wanted], email_service)
+        logger.info(f"Profile reminders finished: {sent} sent, {failed} failed")
     finally:
         db.close()
-        logger.info(f"Profile reminders finished: {sent} sent, {failed} failed")
 
 
 @router.post("/send", response_model=ReminderResult)

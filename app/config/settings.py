@@ -62,6 +62,8 @@ class Settings(BaseSettings):
 
     # Claude (Anthropic API) for AI features: CV parsing, profile review, matching
     ANTHROPIC_API_KEY: Optional[str] = None
+    # Send 'finish your profile' reminders automatically (daily job: app/scripts/send_profile_reminders.py)
+    PROFILE_REMINDERS_AUTO: bool = False
     # Deprecated: AI moved to Claude; kept so an existing .env still loads
     OPENAI_API_KEY: Optional[str] = None
 

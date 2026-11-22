@@ -14,6 +14,12 @@ from app.modules.proz.models.proz import ProzProfile
 _AUTO_BIO_PREFIXES = ("Professional with ", "Professional looking to provide quality services")
 _MIN_BIO_CHARS = 120
 
+# Sending rules, shared by the admin button and the daily automatic job.
+REMINDER_INTERVAL_DAYS = 7   # at most once a week per person
+MAX_REMINDERS = 3            # and never more than three in total
+MIN_ACCOUNT_AGE_DAYS = 1     # automatic job only: give new sign-ups a day first
+AUTO_SCHEDULE = "every day at 10:00 AM US Eastern"
+
 
 @dataclass
 class Step:
@@ -58,9 +64,24 @@ class Recipient:
         return sum(1 for s in self.steps if s.done)
 
 
-def find_recipients(db: Session, skip_recent_days: int = 7) -> Tuple[List[Recipient], int]:
-    """Verified, active professionals with at least one step left. Also returns how many were skipped as recently reminded."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=skip_recent_days)
+def _aware(value: Optional[datetime]) -> Optional[datetime]:
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def find_recipients(
+    db: Session,
+    skip_recent_days: int = REMINDER_INTERVAL_DAYS,
+    min_account_age_days: int = 0,
+    max_reminders: int = MAX_REMINDERS,
+) -> Tuple[List[Recipient], int]:
+    """Verified, active professionals with at least one step left who haven't hit the sending limits.
+
+    Also returns how many were skipped because they were reminded recently."""
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=skip_recent_days)
+    newest_allowed = now - timedelta(days=min_account_age_days)
     users = (
         db.query(User)
         .filter(User.is_active.is_(True), User.is_verified.is_(True), User.is_superuser.is_(False))
@@ -72,19 +93,50 @@ def find_recipients(db: Session, skip_recent_days: int = 7) -> Tuple[List[Recipi
     for user in users:
         if getattr(user, "is_banned", False):
             continue
+        if (user.profile_reminder_count or 0) >= max_reminders:
+            continue
+        created = _aware(user.created_at)
+        if min_account_age_days and created is not None and created > newest_allowed:
+            continue
         profile = profile_for(db, user)
         steps = checklist(profile)
         if all(s.done for s in steps):
             continue
-        sent_at = user.profile_reminder_sent_at
+        sent_at = _aware(user.profile_reminder_sent_at)
         if sent_at is not None:
-            if sent_at.tzinfo is None:
-                sent_at = sent_at.replace(tzinfo=timezone.utc)
             if sent_at > cutoff:
                 recently_reminded += 1
                 continue
         recipients.append(Recipient(user, profile, steps))
     return recipients, recently_reminded
+
+
+def send_to(db: Session, recipients: List[Recipient], email_service) -> Tuple[int, int]:
+    """Email each recipient their own checklist and record it. Returns (sent, failed)."""
+    import logging
+
+    log = logging.getLogger(__name__)
+    sent = failed = 0
+    for r in recipients:
+        user = r.user
+        subject, html_body, text_body = render(user.first_name, r.steps)
+        try:
+            email_service.send_email(
+                to_email=user.email,
+                to_name=" ".join(filter(None, [user.first_name, user.last_name])) or None,
+                subject=subject,
+                html_body=html_body,
+                text_body=text_body,
+            )
+        except Exception as e:  # keep going; one bad address shouldn't stop the rest
+            failed += 1
+            log.error(f"Profile reminder to {user.email} failed: {e}")
+            continue
+        user.profile_reminder_sent_at = datetime.now(timezone.utc)
+        user.profile_reminder_count = (user.profile_reminder_count or 0) + 1
+        db.commit()
+        sent += 1
+    return sent, failed
 
 
 def sample_steps() -> List[Step]:
