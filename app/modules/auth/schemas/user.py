@@ -1,4 +1,5 @@
 # app/modules/auth/schemas/user.py
+from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 import uuid
@@ -33,6 +34,8 @@ class UserUpdate(UserBase):
 # Properties to return to client - THIS IS THE KEY FIX
 class User(UserBase):
     id: str  # Keep as string for API response
+    is_verified: Optional[bool] = None
+    created_at: Optional[datetime] = None
     
     # This validator converts UUID to string automatically
     @field_validator('id', mode='before')
