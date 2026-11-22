@@ -65,6 +65,8 @@ def resolve(stored_path: Optional[str]) -> Optional[Path]:
 def delete(stored_path: Optional[str]) -> None:
     path = resolve(stored_path)
     if path:
+        from app.services.ai_profile_service import forget_cached_analysis
+        forget_cached_analysis(str(path))
         try:
             path.unlink()
         except OSError:

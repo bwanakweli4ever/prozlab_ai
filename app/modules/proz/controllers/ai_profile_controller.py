@@ -10,9 +10,16 @@ from app.modules.auth.services.auth_service import get_current_user
 from app.modules.auth.models.user import User
 from app.modules.proz.models.proz import ProzProfile
 from app.modules.proz.schemas.proz import ProzProfileUpdate, ProzProfileResponse
-from app.services.ai_profile_service import AIProfileService
+from app.services.ai_profile_service import AIProfileService, consume_ai_quota
 
 router = APIRouter(prefix="/ai")
+
+
+def ai_user(current_user: User = Depends(get_current_user)) -> User:
+    """The signed-in user, counted against the daily AI limit (admins aren't limited)."""
+    if not current_user.is_superuser and not consume_ai_quota(str(current_user.id)):
+        raise HTTPException(status_code=429, detail="You've used today's AI help. It resets tomorrow.")
+    return current_user
 
 @router.get("/status")
 async def ai_status():
@@ -22,7 +29,7 @@ async def ai_status():
 @router.post("/parse-resume")
 async def parse_resume(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(ai_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     if not file.filename.lower().endswith('.pdf'):
@@ -45,7 +52,7 @@ async def parse_resume(
 
 @router.post("/parse-saved-resume")
 async def parse_saved_resume(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(ai_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """Read the CV already saved on the signed-in professional's profile and suggest profile fields."""
@@ -150,7 +157,7 @@ async def apply_suggestions(
 
 @router.post("/review-profile")
 async def review_profile(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(ai_user),
     db: Session = Depends(get_db),
 ):
     profile = (
@@ -189,7 +196,7 @@ class RephraseApplyRequest(BaseModel):
 @router.post("/rephrase-apply", response_model=ProzProfileResponse)
 async def rephrase_and_apply(
     payload: RephraseApplyRequest | None = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(ai_user),
     db: Session = Depends(get_db),
 ):
     profile = db.query(ProzProfile).filter(ProzProfile.email == current_user.email).first()
@@ -273,7 +280,7 @@ class DraftProfile(BaseModel):
 @router.post("/review-draft")
 async def review_draft(
     draft: DraftProfile,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(ai_user),
 ):
     ai = AIProfileService()
     # Merge user defaults for missing email/name to improve AI context

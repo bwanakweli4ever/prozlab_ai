@@ -1,5 +1,10 @@
 import base64
+import hashlib
 import json
+import threading
+import time
+from datetime import date
+from pathlib import Path
 import logging
 import os
 from typing import Any, Dict, List, Literal, Optional, Type, TypeVar
@@ -9,7 +14,37 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-CLAUDE_MODEL = "claude-opus-5-5"
+CLAUDE_MODEL = "claude-opus-5-5"  # default; set CLAUDE_MODEL in .env to use a cheaper model
+# A CV whose PDF yields at least this much text is sent as text (about a quarter of the tokens of the PDF itself).
+MIN_TEXT_CHARS = 300
+CACHE_DAYS = 30
+AI_CACHE_DIR = Path(os.getenv("PRIVATE_UPLOAD_DIR", "private_uploads")) / "ai_cache"
+
+_quota_lock = threading.Lock()
+_quota_usage: Dict[str, int] = {}
+
+
+def forget_cached_analysis(file_path: str) -> None:
+    """Remove the cached analysis of this CV (called when the CV itself is deleted)."""
+    try:
+        (AI_CACHE_DIR / f"{hashlib.sha256(Path(file_path).read_bytes()).hexdigest()}.json").unlink()
+    except OSError:
+        pass
+
+
+def consume_ai_quota(user_key: str) -> bool:
+    """Count one AI request for this user today (UTC). False once the daily limit is reached."""
+    limit = int(os.getenv("AI_DAILY_LIMIT_PER_USER", "20") or 20)
+    key = f"{date.today().isoformat()}:{user_key}"
+    with _quota_lock:
+        if len(_quota_usage) > 5000:  # drop earlier days
+            today = date.today().isoformat()
+            for k in [k for k in _quota_usage if not k.startswith(today)]:
+                _quota_usage.pop(k, None)
+        if _quota_usage.get(key, 0) >= limit:
+            return False
+        _quota_usage[key] = _quota_usage.get(key, 0) + 1
+        return True
 MARKETPLACE_CONTEXT = (
     "Prozlab is a US company that sends verified IT, web and software professionals to client businesses. "
     "Professionals build a profile so we can match them to client work."
@@ -128,6 +163,7 @@ class AIProfileService:
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or (
             getattr(settings, "ANTHROPIC_API_KEY", None) if settings else None
         )
+        self.model = (os.getenv("CLAUDE_MODEL") or CLAUDE_MODEL).strip()
         # Why the last Claude call failed: "not_configured", "quota", "auth", "rate_limit" or "error"
         self.last_ai_error: Optional[str] = None
 
@@ -138,15 +174,17 @@ class AIProfileService:
             return None
         client = anthropic.Anthropic(api_key=self.anthropic_api_key, timeout=120.0)
         try:
+            extra: Dict[str, Any] = {}
+            if "haiku" not in self.model:  # Haiku has no server-side fallback
+                extra = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
             response = client.beta.messages.parse(
-                model=CLAUDE_MODEL,
-                max_tokens=16000,
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
+                model=self.model,
+                max_tokens=8000,  # the structured answers here are a few thousand tokens at most
                 output_config={"effort": "low"},
                 system=system,
                 messages=[{"role": "user", "content": content}],
                 output_format=output_format,
+                **extra,
             )
         except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
             logger.error(f"Claude auth error: {e}")
@@ -216,12 +254,14 @@ class AIProfileService:
         return text
 
     def _analyze_with_claude(self, file_path: str, text: str) -> Optional[Dict[str, Any]]:
-        """Send the PDF itself (Claude reads layout and scanned pages); fall back to extracted text if it's too big."""
+        """Send the CV's text when it has some (far fewer tokens); send the PDF itself only for scanned CVs."""
         size = os.path.getsize(file_path)
-        if file_path.lower().endswith(".pdf") and size <= 25 * 1024 * 1024:
+        if len(text.strip()) >= MIN_TEXT_CHARS:
+            content: Any = f"Resume text:\n\n{text[:60000]}"
+        elif file_path.lower().endswith(".pdf") and size <= 25 * 1024 * 1024:
             with open(file_path, "rb") as f:
                 pdf_b64 = base64.standard_b64encode(f.read()).decode("utf-8")
-            content: Any = [
+            content = [
                 {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64}},
                 {"type": "text", "text": "This is my resume. Fill in my profile fields from it."},
             ]
@@ -433,7 +473,6 @@ class AIProfileService:
     def analyze_resume(self, file_path: str) -> Dict[str, Any]:
         lower = file_path.lower()
         if lower.endswith(".docx"):
-            from pathlib import Path
             from app.services.resume_storage import docx_text
             text, method = docx_text(Path(file_path)), "docx"
         elif lower.endswith(".doc"):
@@ -441,8 +480,25 @@ class AIProfileService:
         else:
             text, method = self._extract_text(file_path)
         meta: Dict[str, Any] = {"extraction_method": method, "text_chars": len(text)}
+        # The same CV gets the same answer: reuse an earlier result instead of paying for it again
+        digest = hashlib.sha256(Path(file_path).read_bytes()).hexdigest()
+        cache_file = AI_CACHE_DIR / f"{digest}.json"
+        try:
+            if cache_file.stat().st_mtime < time.time() - CACHE_DAYS * 86400:
+                cache_file.unlink()
+                raise OSError("expired")
+            cached = json.loads(cache_file.read_text())
+            cached["meta"] = {**meta, "ai_used": True, "ai_error": None, "cached": True}
+            return cached
+        except (OSError, ValueError):
+            pass
         ai = self._analyze_with_claude(file_path, text)
         if ai:
+            try:
+                AI_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(json.dumps(ai))
+            except OSError as e:
+                logger.warning(f"Could not cache CV analysis: {e}")
             meta.update(ai_used=True, ai_error=None)
             ai["meta"] = meta
             return ai
@@ -454,7 +510,7 @@ class AIProfileService:
         return {"extracted": {}, "suggestions": ["Could not read text from this file. Upload a text-based PDF or .docx (not a scanned image)."], "rephrased_summaries": [], "meta": meta}
 
     def status(self) -> Dict[str, Any]:
-        return {"ai_configured": bool(self.anthropic_api_key), "provider": "anthropic", "model": CLAUDE_MODEL}
+        return {"ai_configured": bool(self.anthropic_api_key), "provider": "anthropic", "model": self.model}
 
     def review_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """Review an existing profile and suggest targeted improvements.
