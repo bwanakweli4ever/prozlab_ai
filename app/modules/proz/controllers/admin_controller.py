@@ -507,3 +507,88 @@ def send_verification_notification(
         
     except Exception as e:
         print(f"❌ Failed to send verification email to {user_email}: {str(e)}")
+
+
+# ---- Message a professional (email + in-app notification) ----
+from pydantic import BaseModel as _BaseModel, Field as _Field
+
+
+class AdminMessageRequest(_BaseModel):
+    subject: str = _Field(..., min_length=2, max_length=150)
+    message: str = _Field(..., min_length=2, max_length=4000)
+    send_email: bool = True
+
+
+class AdminMessageResult(_BaseModel):
+    success: bool
+    emailed: bool
+    message: str
+
+
+def _message_email(first_name: str, subject: str, body: str) -> tuple:
+    import html as _html
+    from app.config.settings import settings as _settings
+    app_url = getattr(_settings, "APP_URL", "https://prozlab.com").rstrip("/")
+    logo = getattr(_settings, "BRAND_LOGO_URL", "") or f"{app_url}/images/prozlab-logo.png"
+    paragraphs = "".join(
+        f'<p style="margin:0 0 14px 0;">{_html.escape(p)}</p>' for p in body.split("\n") if p.strip()
+    )
+    html_body = f"""<!doctype html><html><body style="margin:0;padding:0;background:#F1F5F9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;"><tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;">
+<tr><td style="padding:0 4px 18px 4px;"><img src="{_html.escape(logo)}" alt="Prozlab" height="34" style="display:block;height:34px;width:auto;border:0;"></td></tr>
+<tr><td style="background:#ffffff;border:1px solid #E2E8F0;border-radius:18px;padding:32px 36px;font:400 15px/1.65 Arial,Helvetica,sans-serif;color:#0F172A;">
+<p style="margin:0 0 14px 0;">Hi {_html.escape(first_name or "there")},</p>
+{paragraphs}
+<p style="margin:22px 0 0 0;"><a href="{app_url}/login" style="display:inline-block;background:#4F46E5;color:#ffffff;text-decoration:none;font:700 14px/1 Arial,Helvetica,sans-serif;padding:14px 22px;border-radius:12px;">Open my dashboard</a></p>
+<p style="margin:22px 0 0 0;color:#64748B;font-size:13px;">The Prozlab team &middot; reply to this email to reach us</p>
+</td></tr>
+<tr><td style="padding:18px 8px 0 8px;font:400 12px/1.6 Arial,Helvetica,sans-serif;color:#94A3B8;text-align:center;">Prozlab Consulting &middot; <a href="{app_url}" style="color:#64748B;">prozlab.com</a></td></tr>
+</table></td></tr></table></body></html>"""
+    text_body = f"Hi {first_name or 'there'},\n\n{body}\n\nOpen your dashboard: {app_url}/login\n\nThe Prozlab team (reply to this email to reach us)"
+    return subject, html_body, text_body
+
+
+@router.post("/profiles/{profile_id}/message", response_model=AdminMessageResult)
+def message_professional(
+    profile_id: str,
+    payload: AdminMessageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superuser),
+) -> Any:
+    """Admin only: send a professional a message. It always appears in their Notifications; by default it's emailed too."""
+    import logging as _logging
+    from app.modules.tasks.models.task import TaskNotification
+    from app.services.email_service import EmailService
+
+    profile = db.query(ProzProfile).filter(ProzProfile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    subject = payload.subject.strip()
+    body = payload.message.strip()
+
+    db.add(TaskNotification(proz_id=profile.id, title=subject[:200], message=body, notification_type="admin_message"))
+    db.commit()
+
+    emailed = False
+    note = "Saved to their notifications."
+    if payload.send_email:
+        service = EmailService()
+        if not (service.mailtrap_api_key or service.smtp_configured):
+            note = "Saved to their notifications. Email isn't set up, so no email was sent."
+        else:
+            subj, html_body, text_body = _message_email(profile.first_name, subject, body)
+            try:
+                service.send_email(
+                    to_email=profile.email,
+                    to_name=" ".join(filter(None, [profile.first_name, profile.last_name])) or None,
+                    subject=subj,
+                    html_body=html_body,
+                    text_body=text_body,
+                )
+                emailed = True
+                note = f"Emailed to {profile.email} and saved to their notifications."
+            except Exception as e:
+                _logging.getLogger(__name__).error(f"Admin message email to {profile.email} failed: {e}")
+                note = "Saved to their notifications, but the email failed to send."
+    return AdminMessageResult(success=True, emailed=emailed, message=note)

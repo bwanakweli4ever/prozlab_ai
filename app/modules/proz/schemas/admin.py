@@ -70,6 +70,14 @@ class AdminProfileDetailResponse(BaseModel):
     website: Optional[str] = None
     linkedin: Optional[str] = None
     resume_filename: Optional[str] = None
+    resume_uploaded_at: Optional[datetime] = None
+    user_id: Optional[uuid.UUID] = None
+    # Same fields the professional's own dashboard uses, so admins see the same completion %
+    skills: Optional[List[str]] = None
+    portfolio_links: Optional[List[str]] = None
+    work_types: Optional[List[str]] = None
+    experience_level: Optional[str] = None
+    skill_verification_status: Optional[str] = None
     preferred_contact_method: Optional[str] = None
     verification_status: str
     is_featured: bool
