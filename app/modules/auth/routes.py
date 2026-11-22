@@ -1,6 +1,6 @@
 # app/modules/auth/routes.py - CORRECTED
 from fastapi import APIRouter
-from app.modules.auth.controllers import auth_controller, otp_controller, email_controller, password_reset_controller
+from app.modules.auth.controllers import auth_controller, otp_controller, email_controller, password_reset_controller, profile_reminder_controller
 
 # Create the main auth router
 router = APIRouter()
@@ -13,6 +13,7 @@ router.include_router(auth_controller.router, tags=["Authentication"])
 
 # # Include email controller with /email prefix  
 router.include_router(email_controller.router, prefix="/email", tags=["Email Verification"])
+router.include_router(profile_reminder_controller.router, prefix="/email/profile-reminders", tags=["Profile Reminders"])
 
 # Include password reset controller with /password prefix
 router.include_router(password_reset_controller.router, prefix="/password", tags=["Password Reset"])

@@ -42,6 +42,10 @@ class ProzProfile(Base):
     work_types = Column(PortableJSON, nullable=True)  # ["full-time", "contract", ...]
     skills = Column(PortableJSON, nullable=True)  # expertise / skill tags
     portfolio_links = Column(PortableJSON, nullable=True)  # portfolio URLs
+    # CV / resume, stored privately (never under the public /static mount)
+    resume_filename = Column(String(255), nullable=True)  # original file name shown to people
+    resume_path = Column(String(500), nullable=True)  # server-side path, never sent to clients
+    resume_uploaded_at = Column(DateTime(timezone=True), nullable=True)
     
     # Education & Skills
     education = Column(Text, nullable=True)

@@ -31,6 +31,8 @@ class User(Base):
     flagged_at = Column(DateTime(timezone=True), nullable=True)
     banned_at = Column(DateTime(timezone=True), nullable=True)
     fraud_scanned_at = Column(DateTime(timezone=True), nullable=True)
+    # Last "finish your profile" reminder email, so admins don't re-send too soon
+    profile_reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
     
     # Timestamps (override base class if needed)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

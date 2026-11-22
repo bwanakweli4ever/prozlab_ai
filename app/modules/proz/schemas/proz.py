@@ -98,6 +98,8 @@ class ProzProfileResponse(ProzProfileBase):
     id: uuid.UUID  # Change from str to uuid.UUID
     user_id: Optional[uuid.UUID] = None  # Add user_id field
     profile_image_url: Optional[str] = None
+    resume_filename: Optional[str] = None
+    resume_uploaded_at: Optional[datetime] = None
     verification_status: str = "pending"  # Changed from enum to str for simplicity
     is_featured: bool = False
     rating: float = 0.0

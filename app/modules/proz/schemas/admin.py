@@ -40,6 +40,7 @@ class AdminProfileListItem(BaseModel):
     profile_image_url: Optional[str] = None
     location: Optional[str] = None
     years_experience: Optional[int] = None
+    resume_filename: Optional[str] = None
     verification_status: str
     is_featured: bool
     rating: float
@@ -68,6 +69,7 @@ class AdminProfileDetailResponse(BaseModel):
     certifications: Optional[str] = None
     website: Optional[str] = None
     linkedin: Optional[str] = None
+    resume_filename: Optional[str] = None
     preferred_contact_method: Optional[str] = None
     verification_status: str
     is_featured: bool

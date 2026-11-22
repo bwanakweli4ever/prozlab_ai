@@ -60,7 +60,9 @@ class Settings(BaseSettings):
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 
-    # OpenAI (for AI features)
+    # Claude (Anthropic API) for AI features: CV parsing, profile review, matching
+    ANTHROPIC_API_KEY: Optional[str] = None
+    # Deprecated: AI moved to Claude; kept so an existing .env still loads
     OPENAI_API_KEY: Optional[str] = None
 
     # Public URLs (production email links)

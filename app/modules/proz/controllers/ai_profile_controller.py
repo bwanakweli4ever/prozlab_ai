@@ -43,6 +43,24 @@ async def parse_resume(
         except Exception:
             pass
 
+@router.post("/parse-saved-resume")
+async def parse_saved_resume(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Read the CV already saved on the signed-in professional's profile and suggest profile fields."""
+    from app.services import resume_storage
+    profile = (
+        db.query(ProzProfile)
+        .filter((ProzProfile.user_id == current_user.id) | (ProzProfile.email == current_user.email))
+        .first()
+    )
+    path = resume_storage.resolve(profile.resume_path) if profile else None
+    if not path:
+        raise HTTPException(status_code=404, detail="Add your CV first.")
+    result = AIProfileService().analyze_resume(str(path))
+    return {"success": True, **result}
+
 @router.post("/apply-suggestions", response_model=ProzProfileResponse)
 async def apply_suggestions(
     update: ProzProfileUpdate,
@@ -77,6 +95,7 @@ async def apply_suggestions(
             linkedin=update.linkedin or None,
             preferred_contact_method=update.preferred_contact_method or None,
             profile_image_url=update.profile_image_url or None,
+            skills=update.skills or None,
         )
         db.add(profile)
         db.commit()
@@ -115,6 +134,8 @@ async def apply_suggestions(
         profile.preferred_contact_method = update.preferred_contact_method
     if update.profile_image_url is not None:
         profile.profile_image_url = update.profile_image_url
+    if update.skills is not None:
+        profile.skills = update.skills
 
     db.commit()
     db.refresh(profile)

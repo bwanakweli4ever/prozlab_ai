@@ -1,8 +1,113 @@
-import os
-from typing import Dict, Any, Optional
+import base64
+import json
 import logging
+import os
+from typing import Any, Dict, List, Literal, Optional, Type, TypeVar
+
+import anthropic
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+CLAUDE_MODEL = "claude-opus-5-5"
+MARKETPLACE_CONTEXT = (
+    "Prozlab is a US company that sends verified IT, web and software professionals to client businesses. "
+    "Professionals build a profile so we can match them to client work."
+)
+
+T = TypeVar("T", bound=BaseModel)
+
+
+# ---- Structured outputs Claude must return ----
+
+class _Experience(BaseModel):
+    role: str
+    company: str
+    period: str
+    description: str
+
+
+class _EducationItem(BaseModel):
+    institution: str
+    degree: str
+    period: str
+
+
+class _ResumeFields(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    phone_number: str
+    location: str
+    years_experience: Optional[int]
+    skills: List[str]
+    bio: str
+    education: str
+    certifications: str
+    website: str
+    linkedin: str
+    experiences: List[_Experience]
+    education_items: List[_EducationItem]
+
+
+class _ResumeAnalysis(BaseModel):
+    extracted: _ResumeFields
+    suggestions: List[str]
+    rephrased_summaries: List[str]
+
+
+class _SuggestedUpdates(BaseModel):
+    bio: Optional[str]
+    location: Optional[str]
+    years_experience: Optional[int]
+    hourly_rate: Optional[float]
+    availability: Optional[Literal["full-time", "part-time", "contract", "freelance"]]
+    education: Optional[str]
+    certifications: Optional[str]
+    website: Optional[str]
+    linkedin: Optional[str]
+    preferred_contact_method: Optional[Literal["email", "phone", "linkedin", "website"]]
+
+
+class _ProfileReview(BaseModel):
+    suggested_updates: _SuggestedUpdates
+    suggestions: List[str]
+    rephrased_bio: List[str]
+
+
+class _RankedCandidate(BaseModel):
+    index: int
+    score: float
+    reasons: List[str]
+
+
+class _Ranking(BaseModel):
+    ranking: List[_RankedCandidate]
+
+
+RESUME_SYSTEM = (
+    MARKETPLACE_CONTEXT + " Turn the attached resume into profile fields. "
+    "Use only facts stated in the resume: when it does not say something, use an empty string, an empty list or null. "
+    "location is the person's city and state or country only. years_experience is total years of professional work. "
+    "bio is 2-4 sentences in the first person that a client would read. "
+    "rephrased_summaries are two alternative bios, also first person and built only from the resume. "
+    "suggestions are 3-5 specific, practical ways to strengthen this profile."
+)
+
+REVIEW_SYSTEM = (
+    MARKETPLACE_CONTEXT + " Review the professional profile you are given and suggest targeted improvements. "
+    "In suggested_updates, set only the fields that should change and leave every other field null. "
+    "Never invent employers, numbers, certifications or other facts that are not in the profile. "
+    "suggestions are concise, specific tips. rephrased_bio holds 2-3 improved first-person bios built only from the profile's facts."
+)
+
+RANK_SYSTEM = (
+    MARKETPLACE_CONTEXT + " Rank candidate professionals for a client's service request. "
+    "Return every candidate you would consider, sorted by score descending, with score 0-100 and short reasons. "
+    "index is the candidate's position in the candidates array. Favor a matching specialty or category, enough experience, "
+    "an hourly rate within budget, a local candidate when the work is on site, and a higher rating."
+)
+
 
 class AIProfileService:
     def __init__(self):
@@ -20,14 +125,51 @@ class AIProfileService:
             from app.config.settings import settings  # type: ignore
         except Exception:
             settings = None  # type: ignore
-        # Support common env var names
-        self.openai_api_key = (
-            os.getenv("OPENAI_API_KEY")
-            or os.getenv("OPENAI_APIKEY")
-            or os.getenv("OPENAI_KEY")
-            or (getattr(settings, 'OPENAI_API_KEY', None) if settings else None)
-            or (getattr(settings, 'OPENAI_APIKEY', None) if settings else None)
+        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or (
+            getattr(settings, "ANTHROPIC_API_KEY", None) if settings else None
         )
+        # Why the last Claude call failed: "not_configured", "quota", "auth", "rate_limit" or "error"
+        self.last_ai_error: Optional[str] = None
+
+    def _claude_parse(self, system: str, content: Any, output_format: Type[T]) -> Optional[T]:
+        """One structured-output request to Claude. None on any failure; the reason is in last_ai_error."""
+        if not self.anthropic_api_key:
+            self.last_ai_error = "not_configured"
+            return None
+        client = anthropic.Anthropic(api_key=self.anthropic_api_key, timeout=120.0)
+        try:
+            response = client.beta.messages.parse(
+                model=CLAUDE_MODEL,
+                max_tokens=16000,
+                betas=["server-side-fallback-2026-07-01"],
+                fallbacks="default",
+                output_config={"effort": "low"},
+                system=system,
+                messages=[{"role": "user", "content": content}],
+                output_format=output_format,
+            )
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
+            logger.error(f"Claude auth error: {e}")
+            self.last_ai_error = "auth"
+            return None
+        except anthropic.RateLimitError as e:
+            logger.error(f"Claude rate limited: {e}")
+            self.last_ai_error = "rate_limit"
+            return None
+        except anthropic.BadRequestError as e:
+            logger.error(f"Claude bad request: {e}")
+            self.last_ai_error = "quota" if "credit balance" in str(e).lower() else "error"
+            return None
+        except (anthropic.APIStatusError, anthropic.APIConnectionError) as e:
+            logger.error(f"Claude request failed: {e}")
+            self.last_ai_error = "error"
+            return None
+        if response.stop_reason == "refusal" or response.parsed_output is None:
+            logger.error(f"Claude returned no usable output (stop_reason={response.stop_reason})")
+            self.last_ai_error = "error"
+            return None
+        self.last_ai_error = None
+        return response.parsed_output
 
     def _extract_text(self, file_path: str) -> (str, str):
         """Try multiple libraries to extract text; return (text, method_used)."""
@@ -73,38 +215,22 @@ class AIProfileService:
         text, _ = self._extract_text(file_path)
         return text
 
-    def _call_openai(self, resume_text: str) -> Optional[Dict[str, Any]]:
-        if not self.openai_api_key:
+    def _analyze_with_claude(self, file_path: str, text: str) -> Optional[Dict[str, Any]]:
+        """Send the PDF itself (Claude reads layout and scanned pages); fall back to extracted text if it's too big."""
+        size = os.path.getsize(file_path)
+        if file_path.lower().endswith(".pdf") and size <= 25 * 1024 * 1024:
+            with open(file_path, "rb") as f:
+                pdf_b64 = base64.standard_b64encode(f.read()).decode("utf-8")
+            content: Any = [
+                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64}},
+                {"type": "text", "text": "This is my resume. Fill in my profile fields from it."},
+            ]
+        elif text:
+            content = f"Resume text:\n\n{text}"
+        else:
             return None
-        try:
-            import http.client, json
-            conn = http.client.HTTPSConnection("api.openai.com")
-            payload = {
-                "model": "gpt-4o-mini",
-                "messages": [
-                    {"role": "system", "content": "You are an expert tech recruiter and career coach. Analyze resumes and suggest improvements and profile fields."},
-                    {"role": "user", "content": f"Resume text:\n\n{resume_text}\n\nExtract structured fields (name, email, phone, location, years_experience, skills, bio summary). Suggest improvements and rephrase the summary in 2 variants. Return JSON with keys: extracted, suggestions, rephrased_summaries (array)."}
-                ],
-                "response_format": {"type": "json_object"}
-            }
-            headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {self.openai_api_key}'
-            }
-            conn.request("POST", "/v1/chat/completions", body=json.dumps(payload), headers=headers)
-            res = conn.getresponse()
-            data = res.read()
-            if res.status >= 400:
-                logger.error(f"OpenAI API error {res.status}: {data.decode('utf-8')}")
-                return None
-            raw = data.decode('utf-8')
-            import json as _json
-            obj = _json.loads(raw)
-            content = obj['choices'][0]['message']['content']
-            return _json.loads(content)
-        except Exception as e:
-            logger.error(f"OpenAI call failed: {e}")
-            return None
+        parsed = self._claude_parse(RESUME_SYSTEM, content, _ResumeAnalysis)
+        return parsed.model_dump() if parsed else None
 
     def heuristic_analyze(self, resume_text: str) -> Dict[str, Any]:
         # Enhanced heuristic extraction for common profile fields
@@ -139,12 +265,20 @@ class AIProfileService:
 
         # Location: look for 'Location:' or a line with City, Country pattern
         location = ""
-        for l in lines[:30]:
+        for l in lines[:6]:
+            for seg in re.split(r"\s*[·•|■]\s*", l):
+                seg = seg.strip()
+                if len(seg) <= 40 and re.fullmatch(r"[A-Z][A-Za-z .'\-]+,\s*[A-Z][A-Za-z .]+", seg):
+                    location = seg
+                    break
+            if location:
+                break
+        for l in ([] if location else lines[:30]):
             m = re.search(r"location\s*[:\-]\s*(.+)", l, re.I)
             if m:
                 location = m.group(1).strip()
                 break
-            if re.search(r",\s*[A-Za-z]{2,}($|[^A-Za-z])", l) and not re.search(r"@|\d{3,}", l):
+            if len(l) <= 60 and re.search(r",\s*[A-Za-z]{2,}($|[^A-Za-z])", l) and not re.search(r"@|\d{3,}", l):
                 # looks like 'City, Country/State'
                 location = l
                 break
@@ -293,45 +427,40 @@ class AIProfileService:
                 "Include modern tools and frameworks you’ve used in the last 2-3 years.",
                 "Add concise, role-specific keywords to pass ATS filters.",
             ],
-            "rephrased_summaries": [
-                "Results-driven professional with a proven track record delivering impactful solutions across multiple domains.",
-                "Detail-oriented specialist focused on quality, efficiency, and measurable outcomes in every engagement.",
-            ],
+            "rephrased_summaries": [],
         }
 
     def analyze_resume(self, file_path: str) -> Dict[str, Any]:
-        text, method = self._extract_text(file_path)
-        meta = {"extraction_method": method, "text_chars": len(text)}
-        if not text:
-            # Try OpenAI even without text to return useful templates/suggestions
-            ai = self._call_openai("The uploaded PDF text could not be extracted. Provide a generic, high-quality professional profile summary template and suggestions.")
-            if ai:
-                ai.setdefault("meta", meta)
-                return ai
-        ai = self._call_openai(text) if text else None
+        lower = file_path.lower()
+        if lower.endswith(".docx"):
+            from pathlib import Path
+            from app.services.resume_storage import docx_text
+            text, method = docx_text(Path(file_path)), "docx"
+        elif lower.endswith(".doc"):
+            return {"extracted": {}, "suggestions": ["Old Word (.doc) files can't be read automatically. Save your CV as PDF or .docx and try again."], "rephrased_summaries": [], "meta": {"extraction_method": None, "text_chars": 0, "ai_used": False, "ai_error": None}}
+        else:
+            text, method = self._extract_text(file_path)
+        meta: Dict[str, Any] = {"extraction_method": method, "text_chars": len(text)}
+        ai = self._analyze_with_claude(file_path, text)
         if ai:
-            ai.setdefault("meta", meta)
+            meta.update(ai_used=True, ai_error=None)
+            ai["meta"] = meta
             return ai
+        meta.update(ai_used=False, ai_error=self.last_ai_error)
         if text:
             result = self.heuristic_analyze(text)
-            result.setdefault("meta", meta)
+            result["meta"] = meta
             return result
-        return {"extracted": {}, "suggestions": ["Could not read PDF text. Please upload a text-based PDF (not a scanned image)."], "rephrased_summaries": [], "meta": meta}
+        return {"extracted": {}, "suggestions": ["Could not read text from this file. Upload a text-based PDF or .docx (not a scanned image)."], "rephrased_summaries": [], "meta": meta}
 
     def status(self) -> Dict[str, Any]:
-        return {"openai_configured": bool(self.openai_api_key)}
+        return {"ai_configured": bool(self.anthropic_api_key), "provider": "anthropic", "model": CLAUDE_MODEL}
 
     def review_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """Review an existing profile and suggest targeted improvements.
 
-        Returns:
-          {
-            suggested_updates: { field: value, ... },
-            suggestions: [..human-readable tips..],
-            rephrased_bio: [..options..]
-          }
+        Returns {suggested_updates: {field: value}, suggestions: [...], rephrased_bio: [...], ai_used, ai_error}
         """
-        # Build input text
         fields = [
             f"Name: {profile.get('first_name','')} {profile.get('last_name','')}",
             f"Email: {profile.get('email','')}",
@@ -347,39 +476,15 @@ class AIProfileService:
             f"LinkedIn: {profile.get('linkedin','')}",
             f"Preferred Contact: {profile.get('preferred_contact_method','')}",
         ]
-        input_text = "\n".join(fields)
-
-        # If OpenAI is available, ask for structured JSON with suggested_updates per field
-        if self.openai_api_key:
-            try:
-                import http.client, json
-                conn = http.client.HTTPSConnection("api.openai.com")
-                payload = {
-                    "model": "gpt-4o-mini",
-                    "messages": [
-                        {"role": "system", "content": "You are a senior recruiter and profile optimization expert."},
-                        {"role": "user", "content": (
-                            "Here is a professional profile. Critique it and suggest targeted improvements.\n"
-                            "Return JSON with keys: suggested_updates (object of only fields that should change: bio, location, years_experience, hourly_rate, availability, education, certifications, website, linkedin, preferred_contact_method),"
-                            " suggestions (array of concise tips), rephrased_bio (array of 2-3 improved bios).\n\n" + input_text
-                        )}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-                headers = {
-                    'Content-Type': 'application/json',
-                    'Authorization': f'Bearer {self.openai_api_key}'
-                }
-                conn.request("POST", "/v1/chat/completions", body=json.dumps(payload), headers=headers)
-                res = conn.getresponse()
-                data = res.read()
-                if res.status < 400:
-                    raw = data.decode('utf-8')
-                    obj = json.loads(raw)
-                    content = obj['choices'][0]['message']['content']
-                    return json.loads(content)
-            except Exception as e:
-                logger.error(f"OpenAI review_profile failed: {e}")
+        parsed = self._claude_parse(REVIEW_SYSTEM, "\n".join(fields), _ProfileReview)
+        if parsed:
+            return {
+                "suggested_updates": parsed.suggested_updates.model_dump(exclude_none=True),
+                "suggestions": parsed.suggestions,
+                "rephrased_bio": parsed.rephrased_bio,
+                "ai_used": True,
+                "ai_error": None,
+            }
 
         # Heuristic fallback
         suggestions = []
@@ -399,16 +504,16 @@ class AIProfileService:
             suggestions.append("List relevant certifications (e.g., AWS, Azure, security).")
         if not profile.get('linkedin'):
             suggestions.append("Include a LinkedIn URL for credibility.")
-        rephrased_bio = []
-        if bio:
-            rephrased_bio = [
-                "Impact-focused engineer with a track record of delivering scalable, reliable systems and measurable outcomes.",
-                "Versatile professional specializing in high-quality solutions, collaboration, and continuous improvement.",
-            ]
-        return {"suggested_updates": suggested_updates, "suggestions": suggestions, "rephrased_bio": rephrased_bio}
+        return {
+            "suggested_updates": suggested_updates,
+            "suggestions": suggestions,
+            "rephrased_bio": [],
+            "ai_used": False,
+            "ai_error": self.last_ai_error,
+        }
 
     def rank_professionals(self, service_request: Dict[str, Any], candidates: list[Dict[str, Any]], top_k: int = 10) -> list[Dict[str, Any]]:
-        """Rank professionals for a service request. Uses OpenAI if configured; otherwise heuristic.
+        """Rank professionals for a service request with Claude; heuristic scoring if Claude is unavailable.
 
         service_request: dict with keys like service_title, service_description, service_category,
                          location_preference, budget_max, remote_work_allowed
@@ -416,52 +521,16 @@ class AIProfileService:
                     hourly_rate, rating, specialties (list[str])
         Returns: list of {candidate: obj, score: float, reasons: [str]}
         """
-        # If OpenAI available, request a JSON ranking
-        if self.openai_api_key and candidates:
-            try:
-                import http.client, json
-                conn = http.client.HTTPSConnection("api.openai.com")
-                prompt = {
-                    "request": service_request,
-                    "candidates": candidates,
-                    "instructions": "Rank candidates for best match. Return JSON array sorted desc by score with objects {index, score (0-100), reasons (array of short strings)}. index refers to the index in candidates array. Favor matching specialty/category, sufficient experience, reasonable hourly within budget, local if not remote, higher rating."
-                }
-                payload = {
-                    "model": "gpt-4o-mini",
-                    "messages": [
-                        {"role": "system", "content": "You are a matching engine producing numeric scores and concise reasons."},
-                        {"role": "user", "content": json.dumps(prompt)}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-                headers = {
-                    'Content-Type': 'application/json',
-                    'Authorization': f'Bearer {self.openai_api_key}'
-                }
-                conn.request("POST", "/v1/chat/completions", body=json.dumps(payload), headers=headers)
-                res = conn.getresponse()
-                data = res.read()
-                if res.status < 400:
-                    obj = json.loads(data.decode('utf-8'))
-                    content = obj['choices'][0]['message']['content']
-                    ranked = json.loads(content)
-                    # Expect ranked to be {"ranking": [{index, score, reasons:[]}, ...]} or array itself
-                    items = ranked.get("ranking") if isinstance(ranked, dict) else ranked
-                    result = []
-                    for r in (items or []):
-                        try:
-                            idx = int(r.get("index"))
-                            if 0 <= idx < len(candidates):
-                                result.append({
-                                    "candidate": candidates[idx],
-                                    "score": float(r.get("score", 0)),
-                                    "reasons": r.get("reasons", [])
-                                })
-                        except Exception:
-                            continue
-                    return result[:top_k]
-            except Exception as e:
-                logger.error(f"OpenAI rank_professionals failed: {e}")
+        if candidates:
+            payload = json.dumps({"request": service_request, "candidates": candidates}, default=str)
+            parsed = self._claude_parse(RANK_SYSTEM, payload, _Ranking)
+            if parsed:
+                result = []
+                for r in parsed.ranking:
+                    if 0 <= r.index < len(candidates):
+                        result.append({"candidate": candidates[r.index], "score": float(r.score), "reasons": r.reasons})
+                result.sort(key=lambda item: item["score"], reverse=True)
+                return result[:top_k]
 
         # Heuristic fallback
         results: list[Dict[str, Any]] = []

@@ -218,3 +218,102 @@ async def cleanup_orphaned_images(
         "deleted_count": result.get("deleted_count", 0),
         "valid_images_count": len(valid_filenames)
     }
+
+# ---- CV / resume (stored privately; see app/services/resume_storage.py) ----
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from app.services import resume_storage
+
+
+class ResumeInfo(BaseModel):
+    resume_filename: Optional[str] = None
+    resume_uploaded_at: Optional[datetime] = None
+
+
+def _own_profile(db: Session, user: User) -> Optional[ProzProfile]:
+    return (
+        db.query(ProzProfile)
+        .filter((ProzProfile.user_id == user.id) | (ProzProfile.email == user.email))
+        .first()
+    )
+
+
+def _resume_response(profile: ProzProfile):
+    path = resume_storage.resolve(profile.resume_path)
+    if not path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No CV on this profile yet.")
+    return FileResponse(
+        path,
+        media_type=resume_storage.media_type(profile.resume_filename or path.name),
+        filename=profile.resume_filename or path.name,
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post("/upload-resume", response_model=ResumeInfo)
+async def upload_resume(
+    file: UploadFile = File(..., description="CV as PDF, DOCX or DOC, up to 10 MB"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Save or replace the signed-in professional's CV."""
+    profile = _own_profile(db, current_user)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Create your profile first, then add your CV.")
+    filename = resume_storage.clean_filename(file.filename)
+    data = await file.read(resume_storage.MAX_RESUME_BYTES + 1)
+    try:
+        ext = resume_storage.validate(filename, data)
+    except resume_storage.ResumeError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    old_path = profile.resume_path
+    profile.resume_path = resume_storage.save(str(profile.id), ext, data)
+    profile.resume_filename = filename
+    profile.resume_uploaded_at = datetime.now(timezone.utc)
+    if not profile.user_id:
+        profile.user_id = current_user.id
+    db.commit()
+    db.refresh(profile)
+    if old_path and old_path != profile.resume_path:
+        resume_storage.delete(old_path)
+    return ResumeInfo(resume_filename=profile.resume_filename, resume_uploaded_at=profile.resume_uploaded_at)
+
+
+@router.get("/resume")
+def download_my_resume(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> Any:
+    """Download the signed-in professional's own CV."""
+    profile = _own_profile(db, current_user)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No CV on this profile yet.")
+    return _resume_response(profile)
+
+
+@router.delete("/resume", response_model=ResumeInfo)
+def delete_my_resume(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> Any:
+    """Remove the signed-in professional's CV."""
+    profile = _own_profile(db, current_user)
+    if profile and profile.resume_path:
+        resume_storage.delete(profile.resume_path)
+        profile.resume_path = None
+        profile.resume_filename = None
+        profile.resume_uploaded_at = None
+        db.commit()
+    return ResumeInfo()
+
+
+@router.get("/admin/resume/{profile_id}")
+def admin_download_resume(
+    profile_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superuser),
+) -> Any:
+    """Admin only: download a professional's CV."""
+    profile = db.query(ProzProfile).filter(ProzProfile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
+    return _resume_response(profile)
