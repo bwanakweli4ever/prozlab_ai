@@ -592,3 +592,82 @@ def message_professional(
                 _logging.getLogger(__name__).error(f"Admin message email to {profile.email} failed: {e}")
                 note = "Saved to their notifications, but the email failed to send."
     return AdminMessageResult(success=True, emailed=emailed, message=note)
+
+
+class AdminProfileUpdate(_BaseModel):
+    """Fields an admin may change on a professional's profile. Only fields that are sent are changed."""
+    first_name: Optional[str] = _Field(None, max_length=100)
+    last_name: Optional[str] = _Field(None, max_length=100)
+    phone_number: Optional[str] = _Field(None, max_length=20)
+    bio: Optional[str] = _Field(None, max_length=5000)
+    location: Optional[str] = _Field(None, max_length=255)
+    years_experience: Optional[int] = _Field(None, ge=0, le=70)
+    hourly_rate: Optional[float] = _Field(None, ge=0, le=10000)
+    availability: Optional[str] = _Field(None, max_length=50)
+    education: Optional[str] = _Field(None, max_length=5000)
+    certifications: Optional[str] = _Field(None, max_length=5000)
+    website: Optional[str] = _Field(None, max_length=255)
+    linkedin: Optional[str] = _Field(None, max_length=255)
+    preferred_contact_method: Optional[str] = _Field(None, max_length=50)
+    skills: Optional[List[str]] = None
+    verification_status: Optional[str] = _Field(None, pattern="^(pending|verified|rejected)$")
+    is_featured: Optional[bool] = None
+
+
+_ADMIN_TEXT_FIELDS = (
+    "phone_number", "bio", "location", "availability", "education", "certifications",
+    "website", "linkedin", "preferred_contact_method",
+)
+
+
+@router.put("/profiles/{profile_id}", response_model=AdminProfileDetailResponse)
+def admin_update_profile(
+    profile_id: str,
+    payload: AdminProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superuser),
+) -> Any:
+    """Admin only: edit a professional's profile. Only verified profiles can be featured."""
+    profile = resolve_profile_by_identifier(db, profile_id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+
+    changes = payload.model_dump(exclude_unset=True)
+
+    for name_field in ("first_name", "last_name"):
+        if name_field in changes:
+            value = (changes[name_field] or "").strip()
+            if not value:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="First and last name are required")
+            changes[name_field] = value
+
+    for field in _ADMIN_TEXT_FIELDS:
+        if field in changes and isinstance(changes[field], str):
+            changes[field] = changes[field].strip() or None
+
+    if "skills" in changes and changes["skills"] is not None:
+        seen, cleaned = set(), []
+        for skill in changes["skills"]:
+            text = str(skill).strip()[:60]
+            if text and text.lower() not in seen:
+                seen.add(text.lower())
+                cleaned.append(text)
+        changes["skills"] = cleaned[:40]
+
+    new_status = changes.get("verification_status", profile.verification_status)
+    if changes.get("is_featured") and new_status != "verified":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only verified profiles can be featured")
+    if new_status != "verified":
+        # A profile that is no longer verified drops off the public /proz page
+        changes["is_featured"] = False
+
+    for field, value in changes.items():
+        setattr(profile, field, value)
+    profile.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(profile)
+
+    specialties = db.query(Specialty.name).join(ProzSpecialty).filter(ProzSpecialty.proz_id == profile.id).all()
+    detail = AdminProfileDetailResponse.model_validate(profile)
+    detail.specialties = [s.name for s in specialties]
+    return detail
