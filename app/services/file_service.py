@@ -25,6 +25,9 @@ ALLOWED_ID_DOCUMENT_TYPES = {
     'image/webp',
 }
 ALLOWED_ID_DOCUMENT_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.webp'}
+PRIVATE_VERIFICATION_DIR = Path(os.getenv('PRIVATE_UPLOAD_DIR', 'private_uploads')) / 'verification_documents'
+VERIFICATION_DOCUMENT_URL_PREFIX = '/api/v1/proz/verification/documents/'
+LEGACY_VERIFICATION_URL_PREFIX = '/static/verification_documents/'
 IMAGE_SIZES = {
     'thumbnail': (150, 150),
     'medium': (400, 400),
@@ -42,8 +45,10 @@ class FileService:
         """Create upload directories if they don't exist"""
         self.upload_dir.mkdir(exist_ok=True)
         self.profile_images_dir.mkdir(exist_ok=True)
-        self.verification_documents_dir = self.upload_dir / 'verification_documents'
-        self.verification_documents_dir.mkdir(exist_ok=True)
+        # Identity documents are private: kept outside UPLOAD_DIR (publicly mounted at /static)
+        # and served only through GET /api/v1/proz/verification/documents/{filename}.
+        self.verification_documents_dir = PRIVATE_VERIFICATION_DIR
+        self.verification_documents_dir.mkdir(parents=True, exist_ok=True)
         self.proposals_dir = self.upload_dir / 'proposals'
         self.proposals_dir.mkdir(exist_ok=True)
         
@@ -315,7 +320,7 @@ class FileService:
                 shutil.copyfileobj(file.file, buffer)
 
             final_size = destination.stat().st_size
-            file_url = f"/static/verification_documents/{unique_filename}"
+            file_url = f"{VERIFICATION_DOCUMENT_URL_PREFIX}{unique_filename}"
 
             return {
                 "success": True,

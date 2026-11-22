@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 import requests
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -28,20 +29,48 @@ from app.modules.proz.services.verification_helpers import (
     save_evidences,
     utc_now_iso,
 )
-from app.services.file_service import FileService
+from app.services.file_service import (
+    ALLOWED_ID_DOCUMENT_EXTENSIONS,
+    PRIVATE_VERIFICATION_DIR,
+    VERIFICATION_DOCUMENT_URL_PREFIX,
+    FileService,
+)
 
 router = APIRouter(prefix="/verification", tags=["skill-verification"])
 file_service = FileService()
 
-GITHUB_PATTERN = re.compile(r"^https?://(www\.)?github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)/?$")
-LINKEDIN_PATTERN = re.compile(r"^https?://(www\.)?linkedin\.com/in/[A-Za-z0-9_-]+/?")
+# A GitHub profile or any repository link (with or without https://); the username is what we check.
+GITHUB_PATTERN = re.compile(
+    r"^(?:https?://)?(?:www\.)?github\.com/(?P<user>[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)(?:/[^\s?#]*)?(?:[?#]\S*)?$",
+    re.IGNORECASE,
+)
+LINKEDIN_PATTERN = re.compile(r"^(?:https?://)?(?:[a-z]{2,3}\.)?(?:www\.)?linkedin\.com/in/[A-Za-z0-9_%-]+/?", re.IGNORECASE)
+
+
+def _with_scheme(url: Optional[str]) -> Optional[str]:
+    value = (url or "").strip()
+    if value and not value.lower().startswith(("http://", "https://")):
+        value = "https://" + value
+    return value or None
 
 
 def _is_valid_evidence_url(url: Optional[str]) -> bool:
     if not url:
         return False
     value = url.strip()
-    return value.startswith(("http://", "https://", "/static/", "/uploads/"))
+    return value.startswith(("http://", "https://", "/static/", "/uploads/", VERIFICATION_DOCUMENT_URL_PREFIX))
+
+
+_DOC_NAME = re.compile(r"^[0-9a-fA-F-]{36}_[0-9a-fA-F-]{36}\.[a-z]{3,4}$")
+
+
+def _own_document_url(url: Optional[str], profile: ProzProfile) -> bool:
+    """True only for an ID document this profile uploaded (stored privately, named <profile id>_<uuid>.ext)."""
+    value = (url or "").strip()
+    if not value.startswith(VERIFICATION_DOCUMENT_URL_PREFIX):
+        return False
+    name = value[len(VERIFICATION_DOCUMENT_URL_PREFIX):]
+    return bool(_DOC_NAME.match(name)) and name.startswith(f"{profile.id}_")
 
 
 def _get_profile(db: Session, user: User) -> ProzProfile:
@@ -60,6 +89,17 @@ def _get_profile(db: Session, user: User) -> ProzProfile:
     return profile
 
 
+def _readable_evidences(items: list) -> list:
+    """Evidence items as response models; one malformed stored item must not break the whole page."""
+    out = []
+    for e in items:
+        try:
+            out.append(EvidenceItem(**e))
+        except Exception:
+            continue
+    return out
+
+
 def _status_response(profile: ProzProfile) -> VerificationStatusResponse:
     items = evidences(profile)
     reqs = requirements_met(items)
@@ -67,7 +107,7 @@ def _status_response(profile: ProzProfile) -> VerificationStatusResponse:
     return VerificationStatusResponse(
         skill_verification_status=profile.skill_verification_status or "not_started",
         verification_score=compute_score(items),
-        evidences=[EvidenceItem(**e) for e in items],
+        evidences=_readable_evidences(items),
         requirements_met=reqs,
         can_submit=all(reqs.values()) and profile.skill_verification_status not in {
             "pending_review",
@@ -123,6 +163,8 @@ async def add_evidence(
 ):
     _validate_evidence(payload)
     profile = _get_profile(db, current_user)
+    if payload.type == "identity_document" and not _own_document_url(payload.url, profile):
+        raise HTTPException(status_code=400, detail="Upload your government ID or passport before continuing")
     items = evidences(profile)
     meta = get_meta(profile)
 
@@ -144,7 +186,7 @@ async def add_evidence(
         "id": str(uuid.uuid4()),
         "type": payload.type,
         "title": payload.title.strip(),
-        "url": payload.url.strip() if payload.url else None,
+        "url": (_with_scheme(payload.url) if payload.type in {"github", "linkedin"} else payload.url.strip()) if payload.url else None,
         "description": payload.description.strip() if payload.description else None,
         "referrer_name": payload.referrer_name,
         "referrer_email": str(payload.referrer_email) if payload.referrer_email else None,
@@ -237,6 +279,42 @@ async def upload_identity_document(
     )
 
 
+@router.get("/documents/{filename}")
+def download_identity_document(
+    filename: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """An identity document, for the professional who uploaded it or an admin. Never cached."""
+    not_found = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if not _DOC_NAME.match(filename):
+        raise not_found
+    ext = "." + filename.rsplit(".", 1)[-1].lower()
+    if ext not in ALLOWED_ID_DOCUMENT_EXTENSIONS:
+        raise not_found
+    if not current_user.is_superuser:
+        profile = (
+            db.query(ProzProfile)
+            .filter((ProzProfile.user_id == current_user.id) | (ProzProfile.email == current_user.email))
+            .first()
+        )
+        if not profile or not filename.startswith(f"{profile.id}_"):
+            raise not_found
+    path = (PRIVATE_VERIFICATION_DIR / filename).resolve()
+    if PRIVATE_VERIFICATION_DIR.resolve() not in path.parents or not path.is_file():
+        raise not_found
+    media = {".pdf": "application/pdf", ".png": "image/png", ".webp": "image/webp"}.get(ext, "image/jpeg")
+    return FileResponse(
+        path,
+        media_type=media,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'inline; filename="identity-document{ext}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.post("/github/validate", response_model=GitHubValidateResponse)
 async def validate_github(
     payload: GitHubValidateRequest,
@@ -250,7 +328,7 @@ async def _validate_github_url(url: str) -> GitHubValidateResponse:
     if not match:
         return GitHubValidateResponse(valid=False, message="Enter a public GitHub profile URL, e.g. https://github.com/your-username")
 
-    username = match.group(2)
+    username = match.group("user")
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "Prozlab-Verification"}
     try:
         res = requests.get(

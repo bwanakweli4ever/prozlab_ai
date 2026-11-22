@@ -153,8 +153,9 @@ def render(first_name: Optional[str], steps: List[Step]) -> Tuple[str, str, str]
       <tr><td style="padding:8px 36px 0 36px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">{''.join(rows)}</table></td></tr>
       <tr><td style="padding:28px 36px 8px 36px;">
         <a href="{esc(login_url)}" style="display:inline-block;background:#4F46E5;color:#ffffff;text-decoration:none;font:700 15px/1 Arial,Helvetica,sans-serif;padding:16px 26px;border-radius:12px;">Finish my profile &rarr;</a>
+        <span style="display:inline-block;margin-left:12px;font:600 13px/1.4 Arial,Helvetica,sans-serif;color:#4F46E5;">Takes a few minutes with AI</span>
       </td></tr>
-      <tr><td style="padding:10px 36px 32px 36px;font:400 13px/1.6 Arial,Helvetica,sans-serif;color:#64748B;">Start with your CV: our AI assistant fills in most of the rest for you to check.</td></tr>
+      <tr><td style="padding:10px 36px 32px 36px;font:400 13px/1.6 Arial,Helvetica,sans-serif;color:#64748B;">Upload your CV and our AI assistant fills in most of your profile for you. You just check it and save.</td></tr>
     </table>
   </td></tr>
   <tr><td style="padding:20px 8px 0 8px;font:400 12px/1.6 Arial,Helvetica,sans-serif;color:#94A3B8;text-align:center;">
@@ -177,7 +178,7 @@ def render(first_name: Optional[str], steps: List[Step]) -> Tuple[str, str, str]
     lines += [
         "",
         f"Finish your profile: {login_url}",
-        "Start with your CV: our AI assistant fills in most of the rest for you to check.",
+        "It only takes a few minutes: upload your CV and our AI assistant fills in most of your profile for you to check.",
         "",
         "You're receiving this because you created a Prozlab professional account.",
         "Prozlab Consulting - prozlab.com",

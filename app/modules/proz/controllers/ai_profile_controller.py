@@ -67,6 +67,12 @@ async def apply_suggestions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # AI output can run longer than the columns allow (e.g. a phone with an extension); trim instead of failing.
+    for field, limit in (("first_name", 100), ("last_name", 100), ("phone_number", 20), ("location", 255), ("website", 255), ("linkedin", 255)):
+        value = getattr(update, field, None)
+        if isinstance(value, str) and len(value.strip()) > limit:
+            setattr(update, field, value.strip()[:limit])
+
     profile = (
         db.query(ProzProfile)
         .filter(
