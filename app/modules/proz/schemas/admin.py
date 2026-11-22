@@ -41,6 +41,16 @@ class AdminProfileListItem(BaseModel):
     location: Optional[str] = None
     years_experience: Optional[int] = None
     resume_filename: Optional[str] = None
+    # Fields behind the profile completion %, so the admin dashboard matches the professional's own
+    bio: Optional[str] = None
+    phone_number: Optional[str] = None
+    skills: Optional[List[str]] = None
+    hourly_rate: Optional[float] = None
+    linkedin: Optional[str] = None
+    website: Optional[str] = None
+    education: Optional[str] = None
+    certifications: Optional[str] = None
+    skill_verification_status: Optional[str] = None
     verification_status: str
     is_featured: bool
     rating: float
